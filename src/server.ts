@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
+import fs from 'fs';
 import session from 'express-session';
 import dotenv from 'dotenv';
 import {OAuth2Client} from 'google-auth-library';
@@ -30,12 +31,25 @@ console.log('==================');
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'dev-secret',
-  resave: false,
-  saveUninitialized: false,
-  cookie: { sameSite: 'lax' }
-}));
+
+// Only use session if OAuth is configured (otherwise use service account)
+const oauthClientId = process.env.OAUTH_CLIENT_ID || '';
+const oauthClientSecret = process.env.OAUTH_CLIENT_SECRET || '';
+const useOAuth = oauthClientId && oauthClientSecret;
+
+if (useOAuth) {
+  app.use(session({
+    secret: process.env.SESSION_SECRET || 'dev-secret',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { sameSite: 'lax' }
+  }));
+  // eslint-disable-next-line no-console
+  console.log('OAuth configured, session enabled');
+} else {
+  // eslint-disable-next-line no-console
+  console.log('Using service account, session disabled');
+}
 
 const sites: SiteProperty[] = parseSitesEnv(process.env.GA4_SITES);
 const employeeDimension = process.env.GA4_EMPLOYEE_DIMENSION || 'customUser:employee_id';
@@ -290,58 +304,96 @@ app.get('/api/leaderboard', async (req, res) => {
 
 // Serve client build if available
 const clientDist = path.join(process.cwd(), 'client', 'dist');
-app.use(express.static(clientDist));
-app.get('/', (_req, res) => {
-  res.sendFile(path.join(clientDist, 'index.html'));
-});
+const indexHtmlPath = path.join(clientDist, 'index.html');
+
+if (fs.existsSync(clientDist) && fs.existsSync(indexHtmlPath)) {
+  app.use(express.static(clientDist));
+  app.get('/', (_req, res) => {
+    res.sendFile(indexHtmlPath);
+  });
+  // eslint-disable-next-line no-console
+  console.log('Client build found, serving static files from:', clientDist);
+} else {
+  // eslint-disable-next-line no-console
+  console.warn('Client build not found at:', clientDist, '- API endpoints are still available');
+  app.get('/', (_req, res) => {
+    res.json({
+      message: 'API server is running. Client build not found. Please run: npm run build:client',
+      endpoints: {
+        sites: '/api/sites',
+        aliasMap: '/api/aliasMap',
+        leaderboard: '/api/leaderboard',
+        leaderboardAll: '/api/leaderboard/all',
+        report: '/api/report'
+      }
+    });
+  });
+}
 
 // ===== OAuth endpoints =====
-const oauthClientId = process.env.OAUTH_CLIENT_ID || '';
-const oauthClientSecret = process.env.OAUTH_CLIENT_SECRET || '';
 const oauthRedirect = process.env.OAUTH_REDIRECT || 'http://localhost:3000/auth/callback';
 
 function getOAuthClient() {
   return new OAuth2Client(oauthClientId, oauthClientSecret, oauthRedirect);
 }
 
-app.get('/auth/login', (req, res) => {
-  const client = getOAuthClient();
-  const url = client.generateAuthUrl({
-    access_type: 'offline',
-    prompt: 'consent',
-    scope: [
-      'https://www.googleapis.com/auth/analytics.readonly',
-      'openid',
-      'email',
-      'profile'
-    ]
+// Only register OAuth endpoints if OAuth is configured
+if (useOAuth) {
+  app.get('/auth/login', (req, res) => {
+    const client = getOAuthClient();
+    const url = client.generateAuthUrl({
+      access_type: 'offline',
+      prompt: 'consent',
+      scope: [
+        'https://www.googleapis.com/auth/analytics.readonly',
+        'openid',
+        'email',
+        'profile'
+      ]
+    });
+    res.redirect(url);
   });
-  res.redirect(url);
-});
 
-app.get('/auth/callback', async (req, res) => {
-  const code = String(req.query.code || '');
-  if (!code) return res.status(400).send('Missing code');
-  const client = getOAuthClient();
-  const {tokens} = await client.getToken(code);
-  (req.session as any).gaTokens = tokens;
-  req.session.save(() => res.redirect('/'));
-});
+  app.get('/auth/callback', async (req, res) => {
+    const code = String(req.query.code || '');
+    if (!code) return res.status(400).send('Missing code');
+    const client = getOAuthClient();
+    const {tokens} = await client.getToken(code);
+    (req.session as any).gaTokens = tokens;
+    req.session.save(() => res.redirect('/'));
+  });
 
-app.get('/auth/logout', (req, res) => {
-  (req.session as any).gaTokens = undefined;
-  res.redirect('/');
-});
+  app.get('/auth/logout', (req, res) => {
+    (req.session as any).gaTokens = undefined;
+    res.redirect('/');
+  });
 
-app.get('/auth/status', async (req, res) => {
-  const tokens = (req.session as any).gaTokens;
-  res.json({loggedIn: !!tokens});
-});
+  app.get('/auth/status', async (req, res) => {
+    const tokens = (req.session as any).gaTokens;
+    res.json({loggedIn: !!tokens});
+  });
+
+  app.get('/auth/whoami', async (req, res) => {
+    try {
+      const tokens = (req.session as any).gaTokens;
+      if (!tokens) return res.status(401).json({loggedIn: false});
+      const oauth = getOAuthClient();
+      oauth.setCredentials(tokens);
+      const r = await oauth.request({
+        url: 'https://www.googleapis.com/oauth2/v2/userinfo'
+      });
+      res.json({loggedIn: true, user: r.data});
+    } catch (e: any) {
+      res.status(500).json({error: e?.message || 'whoami_failed'});
+    }
+  });
+}
 
 function buildAnalyticsClientFromSession(sess: any) {
   // Priority: service account > OAuth
   // Service account is preferred and configured via GA_SERVICE_ACCOUNT_JSON or GOOGLE_APPLICATION_CREDENTIALS
   // OAuth is only used if service account is not available
+  if (!useOAuth) return undefined;
   const tokens = sess?.gaTokens;
   if (tokens && oauthClientId && oauthClientSecret) {
     const oauth = getOAuthClient();
@@ -351,21 +403,6 @@ function buildAnalyticsClientFromSession(sess: any) {
   }
   return undefined; // Will use service account from newClient() in ga.ts
 }
-
-app.get('/auth/whoami', async (req, res) => {
-  try {
-    const tokens = (req.session as any).gaTokens;
-    if (!tokens) return res.status(401).json({loggedIn: false});
-    const oauth = getOAuthClient();
-    oauth.setCredentials(tokens);
-    const r = await oauth.request({
-      url: 'https://www.googleapis.com/oauth2/v2/userinfo'
-    });
-    res.json({loggedIn: true, user: r.data});
-  } catch (e: any) {
-    res.status(500).json({error: e?.message || 'whoami_failed'});
-  }
-});
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (err) => {

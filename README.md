@@ -88,4 +88,29 @@ npm run dev
 - Xác nhận sử dụng đúng credentials trên server: dùng `GOOGLE_APPLICATION_CREDENTIALS` (trỏ tới file JSON) hoặc `GA_SERVICE_ACCOUNT_JSON` với JSON string hợp lệ (copy toàn bộ nội dung file sa.json).
 - Đảm bảo service account có quyền ở đúng Property (không phải chỉ Organization/Account nếu Property bị hạn chế riêng).
 
+9) Deploy lên Railway
+- Tạo project mới trên Railway và connect GitHub repo (hoặc deploy từ local).
+- **Cấu hình Build Command**: Trong Railway project settings, set Build Command là:
+  ```
+  npm run build:all
+  ```
+- **Cấu hình Start Command**: Set Start Command là:
+  ```
+  npm start
+  ```
+- Thêm các biến môi trường trong Railway dashboard:
+  - `GA4_SITES`: Danh sách sites (ví dụ: `sportvictoryarena:properties/504898571,NFLInsight360:properties/504752018`)
+  - `GA_SERVICE_ACCOUNT_JSON`: JSON string đầy đủ của service account (copy toàn bộ nội dung file JSON, **không phải file path**)
+  - `PORT`: Railway tự động set, không cần config
+  - `ALIAS_MAP`: JSON string map alias -> employee (ví dụ: `{"504898571": {"bebe": "linh", "sieunhando": "beo"}}`)
+  - `DEFAULT_MODE`: `alias`
+- Railway sẽ tự động:
+  - Chạy `npm install` (bao gồm cả client dependencies qua `postinstall`)
+  - Chạy Build Command (`npm run build:all`) để build server TypeScript và client React
+  - Chạy Start Command (`npm start`) để start server
+- **Lưu ý**: 
+  - Đảm bảo `GA_SERVICE_ACCOUNT_JSON` là JSON string hợp lệ (copy toàn bộ nội dung file JSON vào một dòng)
+  - Server sẽ tự động kiểm tra và serve static files từ `client/dist` nếu có
+  - Nếu không có OAuth config, session sẽ không được sử dụng (không có warning về MemoryStore)
+
 
