@@ -15,8 +15,9 @@ GA4_EMPLOYEE_DIMENSION=customUser:employee_id
 # Cách A: dùng đường dẫn chuẩn GOOGLE_APPLICATION_CREDENTIALS
 # export GOOGLE_APPLICATION_CREDENTIALS=/path/to/sa.json
 
-# Cách B: inline JSON key (copy toàn bộ nội dung file sa.json vào một dòng)
-# GA_SERVICE_ACCOUNT_JSON='{"type":"service_account", ... }'
+# Cách B: JSON string trực tiếp (copy toàn bộ nội dung file sa.json vào một dòng)
+# GA_SERVICE_ACCOUNT_JSON='{"type":"service_account","project_id":"...","private_key":"...","client_email":"..."}'
+# Lưu ý: GA_SERVICE_ACCOUNT_JSON phải là JSON string hợp lệ, không phải file path
 
 PORT=3000
 
@@ -84,7 +85,7 @@ npm run dev
 - Kiểm tra Property ID đúng chưa (GA4 Admin > Property > Property details). Dạng số, ví dụ `123456789`.
 - Cấp quyền cho Service Account vào GA4 property: vào GA4 Admin > Property Access Management > Add users > dán email service account (…@…gserviceaccount.com) > cấp vai trò `Viewer` hoặc `Analyst`.
 - Bật API: trong Google Cloud project chứa service account, đảm bảo đã bật `Analytics Data API`.
-- Xác nhận sử dụng đúng credentials trên server: dùng `GOOGLE_APPLICATION_CREDENTIALS` (trỏ tới file JSON) hoặc `GA_SERVICE_ACCOUNT_JSON` với nội dung toàn bộ file.
+- Xác nhận sử dụng đúng credentials trên server: dùng `GOOGLE_APPLICATION_CREDENTIALS` (trỏ tới file JSON) hoặc `GA_SERVICE_ACCOUNT_JSON` với JSON string hợp lệ (copy toàn bộ nội dung file sa.json).
 - Đảm bảo service account có quyền ở đúng Property (không phải chỉ Organization/Account nếu Property bị hạn chế riêng).
 
 

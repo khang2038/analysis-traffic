@@ -47,7 +47,7 @@ function App() {
   const [siteId, setSiteId] = useState<string>('')
   const [startDate, setStartDate] = useState<string>(() => {
     const d = new Date()
-    d.setDate(d.getDate() - 5) // 5 ngày trước
+    d.setDate(d.getDate() - 3) // 3 ngày trước
     return d.toISOString().split('T')[0]
   })
   const [endDate, setEndDate] = useState<string>(() => {

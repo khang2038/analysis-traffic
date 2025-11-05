@@ -1,7 +1,5 @@
 import {BetaAnalyticsDataClient} from '@google-analytics/data';
 import {extractAliasFromPath} from './alias';
-import * as fs from 'fs';
-import * as path from 'path';
 
 export type SiteProperty = {
   id: string; // GA4 property ID
@@ -95,37 +93,19 @@ export function parseSitesEnv(envValue: string | undefined): SiteProperty[] {
 
 function newClient(): BetaAnalyticsDataClient {
   // Uses GOOGLE_APPLICATION_CREDENTIALS or explicit JSON key via env
-  // If GA_SERVICE_ACCOUNT_JSON is set, use it (can be file path or JSON string)
+  // If GA_SERVICE_ACCOUNT_JSON is set, parse it as JSON string directly
   const jsonEnv = process.env.GA_SERVICE_ACCOUNT_JSON;
   if (jsonEnv) {
-    let credentials: any;
-    // Check if it's a file path (ends with .json or starts with ./ or /)
-    if (jsonEnv.endsWith('.json') || jsonEnv.startsWith('./') || jsonEnv.startsWith('/') || jsonEnv.startsWith('../')) {
-      const filePath = path.isAbsolute(jsonEnv) ? jsonEnv : path.join(process.cwd(), jsonEnv);
+    try {
+      const credentials = JSON.parse(jsonEnv);
       // eslint-disable-next-line no-console
-      console.log('Reading service account from file:', filePath);
-      try {
-        const fileContent = fs.readFileSync(filePath, 'utf8');
-        credentials = JSON.parse(fileContent);
-        // eslint-disable-next-line no-console
-        console.log('Service account loaded successfully, email:', credentials.client_email);
-      } catch (err: any) {
-        // eslint-disable-next-line no-console
-        console.error('Failed to read service account file:', err.message);
-        throw err;
-      }
-    } else {
-      // Try parsing as JSON string
-      try {
-        credentials = JSON.parse(jsonEnv);
-      } catch {
-        // If not valid JSON, treat as file path anyway
-        const filePath = path.isAbsolute(jsonEnv) ? jsonEnv : path.join(process.cwd(), jsonEnv);
-        const fileContent = fs.readFileSync(filePath, 'utf8');
-        credentials = JSON.parse(fileContent);
-      }
+      console.log('Service account loaded from env, email:', credentials.client_email);
+      return new BetaAnalyticsDataClient({credentials});
+    } catch (err: any) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to parse GA_SERVICE_ACCOUNT_JSON as JSON:', err.message);
+      throw new Error('GA_SERVICE_ACCOUNT_JSON must be a valid JSON string');
     }
-    return new BetaAnalyticsDataClient({credentials});
   }
   return new BetaAnalyticsDataClient();
 }
