@@ -132,29 +132,50 @@ export async function fetchEmployeeReport(params: EmployeeReportParams, clientOv
   const {propertyId, employeeDimension, employeeId, startDate, endDate} = params;
 
   // 1) Totals + table by page path + screen class for this employee
-  const [detailResponse] = await client.runReport({
-    property: `properties/${normalizePropertyId(propertyId)}`,
-    dateRanges: [{startDate, endDate}],
-    dimensions: [
-      {name: 'pagePathPlusQueryString'},
-      {name: 'unifiedScreenClass'}
-    ],
-    metrics: [
-      {name: 'activeUsers'},
-      {name: 'sessions'},
-      {name: 'screenPageViews'},
-      {name: 'userEngagementDuration'}
-    ],
-    dimensionFilter: {
-      filter: {
-        fieldName: employeeDimension,
-        stringFilter: {matchType: 'EXACT', value: employeeId}
-      }
-    },
-    limit: 100000
-  });
+  // Pagination: fetch all rows
+  const MAX_LIMIT = 100000;
+  let offset = 0;
+  let totalRowCount = 0;
+  let allRows: any[] = [];
+  let fetchedCount = 0;
 
-  const rows = detailResponse.rows ?? [];
+  do {
+    const [detailResponse] = await client.runReport({
+      property: `properties/${normalizePropertyId(propertyId)}`,
+      dateRanges: [{startDate, endDate}],
+      dimensions: [
+        {name: 'pagePathPlusQueryString'},
+        {name: 'unifiedScreenClass'}
+      ],
+      metrics: [
+        {name: 'activeUsers'},
+        {name: 'sessions'},
+        {name: 'screenPageViews'},
+        {name: 'userEngagementDuration'}
+      ],
+      dimensionFilter: {
+        filter: {
+          fieldName: employeeDimension,
+          stringFilter: {matchType: 'EXACT', value: employeeId}
+        }
+      },
+      limit: MAX_LIMIT,
+      offset: offset
+    });
+
+    const rows = detailResponse.rows ?? [];
+    fetchedCount = rows.length;
+    allRows = allRows.concat(rows);
+    totalRowCount = detailResponse.rowCount ? Number(detailResponse.rowCount) : Math.max(totalRowCount, allRows.length);
+    
+    // eslint-disable-next-line no-console
+    console.log(`fetchEmployeeReport (detail): propertyId=${propertyId}, employeeId=${employeeId}, offset=${offset}, fetched=${fetchedCount}, totalRowCount=${totalRowCount}, accumulated=${allRows.length}`);
+    
+    offset += MAX_LIMIT;
+    // Continue if we got a full batch (means there might be more rows)
+  } while (fetchedCount === MAX_LIMIT);
+
+  const rows = allRows;
   // Aggregate by pagePath (không có screenClass)
   const pageMap: Record<string, {
     activeUsers: number;
@@ -211,14 +232,34 @@ export async function fetchEmployeeReport(params: EmployeeReportParams, clientOv
 
   // 2) Rank among all employees by screenPageViews (change metric as needed)
   const metricForRank: 'activeUsers' | 'sessions' | 'screenPageViews' = 'screenPageViews';
-  const [rankResponse] = await client.runReport({
-    property: `properties/${normalizePropertyId(propertyId)}`,
-    dateRanges: [{startDate, endDate}],
-    dimensions: [{name: employeeDimension}],
-    metrics: [{name: metricForRank}],
-    orderBys: [{desc: true, metric: {metricName: metricForRank}}],
-    limit: 100000
-  });
+  // Pagination: fetch all rows for ranking
+  offset = 0;
+  totalRowCount = 0;
+  let allRankRows: any[] = [];
+  fetchedCount = 0;
+
+  do {
+    const [rankResponse] = await client.runReport({
+      property: `properties/${normalizePropertyId(propertyId)}`,
+      dateRanges: [{startDate, endDate}],
+      dimensions: [{name: employeeDimension}],
+      metrics: [{name: metricForRank}],
+      orderBys: [{desc: true, metric: {metricName: metricForRank}}],
+      limit: MAX_LIMIT,
+      offset: offset
+    });
+
+    const rankRows = rankResponse.rows ?? [];
+    fetchedCount = rankRows.length;
+    allRankRows = allRankRows.concat(rankRows);
+    totalRowCount = rankResponse.rowCount ? Number(rankResponse.rowCount) : Math.max(totalRowCount, allRankRows.length);
+    
+    // eslint-disable-next-line no-console
+    console.log(`fetchEmployeeReport (rank): propertyId=${propertyId}, offset=${offset}, fetched=${fetchedCount}, totalRowCount=${totalRowCount}, accumulated=${allRankRows.length}`);
+    
+    offset += MAX_LIMIT;
+    // Continue if we got a full batch (means there might be more rows)
+  } while (fetchedCount === MAX_LIMIT);
 
   // Get site totals (toàn bộ site, không filter)
   const [siteTotalsResponse] = await client.runReport({
@@ -236,7 +277,7 @@ export async function fetchEmployeeReport(params: EmployeeReportParams, clientOv
   const siteTotalActiveUsers = toNumber(siteTotalsRow?.metricValues?.[0]?.value);
   const siteTotalScreenPageViews = toNumber(siteTotalsRow?.metricValues?.[1]?.value);
 
-  const rankRows = rankResponse.rows ?? [];
+  const rankRows = allRankRows;
   let position = -1;
   for (let i = 0; i < rankRows.length; i++) {
     const dimVal = rankRows[i]?.dimensionValues?.[0]?.value ?? '';
@@ -279,24 +320,45 @@ export async function fetchLeaderboard(params: {
   const {propertyId, employeeDimension, startDate, endDate} = params;
   const orderMetric = params.orderMetric ?? 'screenPageViews';
 
-  const [resp] = await client.runReport({
-    property: `properties/${normalizePropertyId(propertyId)}`,
-    dateRanges: [{startDate, endDate}],
-    dimensions: [{name: employeeDimension}],
-    metrics: [
-      {name: 'activeUsers'},
-      {name: 'sessions'},
-      {name: 'screenPageViews'},
-      {name: 'userEngagementDuration'},
-      {name: 'eventCount'},
-      {name: 'conversions'},
-      {name: 'totalRevenue'}
-    ],
-    orderBys: [{desc: true, metric: {metricName: orderMetric}}],
-    limit: 100000 // Lấy tất cả
-  });
+  // Pagination: fetch all rows
+  const MAX_LIMIT = 100000;
+  let offset = 0;
+  let totalRowCount = 0;
+  let allRows: any[] = [];
+  let fetchedCount = 0;
 
-  const rows = resp.rows ?? [];
+  do {
+    const [resp] = await client.runReport({
+      property: `properties/${normalizePropertyId(propertyId)}`,
+      dateRanges: [{startDate, endDate}],
+      dimensions: [{name: employeeDimension}],
+      metrics: [
+        {name: 'activeUsers'},
+        {name: 'sessions'},
+        {name: 'screenPageViews'},
+        {name: 'userEngagementDuration'},
+        {name: 'eventCount'},
+        {name: 'conversions'},
+        {name: 'totalRevenue'}
+      ],
+      orderBys: [{desc: true, metric: {metricName: orderMetric}}],
+      limit: MAX_LIMIT,
+      offset: offset
+    });
+
+    const rows = resp.rows ?? [];
+    fetchedCount = rows.length;
+    allRows = allRows.concat(rows);
+    totalRowCount = resp.rowCount ? Number(resp.rowCount) : Math.max(totalRowCount, allRows.length);
+    
+    // eslint-disable-next-line no-console
+    console.log(`fetchLeaderboard: propertyId=${propertyId}, offset=${offset}, fetched=${fetchedCount}, totalRowCount=${totalRowCount}, accumulated=${allRows.length}`);
+    
+    offset += MAX_LIMIT;
+    // Continue if we got a full batch (means there might be more rows)
+  } while (fetchedCount === MAX_LIMIT);
+
+  const rows = allRows;
   const leaderboardRows: LeaderboardRow[] = rows.map((r, idx) => {
     const d = r.dimensionValues ?? [];
     const m = r.metricValues ?? [];
@@ -324,7 +386,7 @@ export async function fetchLeaderboard(params: {
 
   return {
     rows: leaderboardRows,
-    totalEmployees: resp.rowCount ? Number(resp.rowCount) : rows.length,
+    totalEmployees: totalRowCount > 0 ? totalRowCount : rows.length,
     metricSorted: orderMetric
   };
 }
@@ -358,25 +420,6 @@ export async function fetchLeaderboardByAlias(params: {
   const useTitleAndScreen = normalizedPropertyId === '495153878';
   const allowedAliases = params.aliasToEmployee ? new Set(Object.keys(params.aliasToEmployee)) : new Set<string>();
 
-  const [resp] = await client.runReport({
-    property: `properties/${normalizedPropertyId}`,
-    dateRanges: [{startDate, endDate}],
-    dimensions: useTitleAndScreen 
-      ? [{name: 'pageTitle'}, {name: 'unifiedScreenClass'}]
-      : [{name: 'pagePathPlusQueryString'}],
-    metrics: [
-      {name: 'activeUsers'},
-      {name: 'sessions'},
-      {name: 'screenPageViews'},
-      {name: 'userEngagementDuration'},
-      {name: 'eventCount'},
-      {name: 'conversions'},
-      {name: 'totalRevenue'}
-    ],
-    orderBys: [{desc: true, metric: {metricName: 'screenPageViews'}}],
-    limit: 100000 // Lấy tất cả
-  });
-
   const map: Record<string, {
     activeUsers: number;
     sessions: number;
@@ -388,11 +431,51 @@ export async function fetchLeaderboardByAlias(params: {
   }> = {};
   // Chỉ aggregate các alias có trong aliasToEmployee (nếu có)
   const shouldFilterAliases = params.aliasToEmployee && Object.keys(params.aliasToEmployee).length > 0;
+
+  // Pagination: fetch all rows
+  const MAX_LIMIT = 100000;
+  let offset = 0;
+  let totalRowCount = 0;
+  let allRows: any[] = [];
+  let fetchedCount = 0;
+
+  do {
+    const [resp] = await client.runReport({
+      property: `properties/${normalizedPropertyId}`,
+      dateRanges: [{startDate, endDate}],
+      dimensions: useTitleAndScreen 
+        ? [{name: 'pageTitle'}, {name: 'unifiedScreenClass'}]
+        : [{name: 'pagePathPlusQueryString'}],
+      metrics: [
+        {name: 'activeUsers'},
+        {name: 'sessions'},
+        {name: 'screenPageViews'},
+        {name: 'userEngagementDuration'},
+        {name: 'eventCount'},
+        {name: 'conversions'},
+        {name: 'totalRevenue'}
+      ],
+      orderBys: [{desc: true, metric: {metricName: 'screenPageViews'}}],
+      limit: MAX_LIMIT,
+      offset: offset
+    });
+
+    const rows = resp.rows ?? [];
+    fetchedCount = rows.length;
+    allRows = allRows.concat(rows);
+    totalRowCount = resp.rowCount ? Number(resp.rowCount) : Math.max(totalRowCount, allRows.length);
+    
+    // eslint-disable-next-line no-console
+    console.log(`fetchLeaderboardByAlias: propertyId=${normalizedPropertyId}, offset=${offset}, fetched=${fetchedCount}, totalRowCount=${totalRowCount}, accumulated=${allRows.length}`);
+    
+    offset += MAX_LIMIT;
+    // Continue if we got a full batch (means there might be more rows)
+  } while (fetchedCount === MAX_LIMIT);
   
   // eslint-disable-next-line no-console
-  console.log('fetchLeaderboardByAlias: propertyId=', normalizedPropertyId, 'useTitleAndScreen=', useTitleAndScreen, 'allowedAliases=', Array.from(allowedAliases), 'totalRows=', resp.rows?.length || 0);
+  console.log('fetchLeaderboardByAlias: propertyId=', normalizedPropertyId, 'useTitleAndScreen=', useTitleAndScreen, 'allowedAliases=', Array.from(allowedAliases), 'totalRows=', allRows.length, 'totalRowCount=', totalRowCount);
   
-  for (const r of resp.rows ?? []) {
+  for (const r of allRows) {
     const d = r.dimensionValues ?? [];
     const m = r.metricValues ?? [];
     
@@ -506,35 +589,56 @@ export async function fetchEmployeeReportByAlias(params: {
   const normalizedPropertyId = normalizePropertyId(propertyId);
   const useTitleAndScreen = normalizedPropertyId === '495153878';
 
-  const [detailResponse] = await client.runReport({
-    property: `properties/${normalizedPropertyId}`,
-    dateRanges: [{startDate, endDate}],
-    dimensions: useTitleAndScreen
-      ? [{name: 'pageTitle'}, {name: 'unifiedScreenClass'}]
-      : [{name: 'pagePathPlusQueryString'}, {name: 'unifiedScreenClass'}],
-    metrics: [
-      {name: 'activeUsers'},
-      {name: 'sessions'},
-      {name: 'screenPageViews'},
-      {name: 'userEngagementDuration'}
-    ],
-    dimensionFilter: useTitleAndScreen
-      ? {
-          filter: {
-            fieldName: 'pageTitle',
-            stringFilter: {matchType: 'CONTAINS', value: alias}
-          }
-        }
-      : {
-          filter: {
-            fieldName: 'pagePathPlusQueryString',
-            stringFilter: {matchType: 'CONTAINS', value: alias}
-          }
-        },
-    limit: 100000
-  });
+  // Pagination: fetch all rows
+  const MAX_LIMIT = 100000;
+  let offset = 0;
+  let totalRowCount = 0;
+  let allRows: any[] = [];
+  let fetchedCount = 0;
 
-  const rows = detailResponse.rows ?? [];
+  do {
+    const [detailResponse] = await client.runReport({
+      property: `properties/${normalizedPropertyId}`,
+      dateRanges: [{startDate, endDate}],
+      dimensions: useTitleAndScreen
+        ? [{name: 'pageTitle'}, {name: 'unifiedScreenClass'}]
+        : [{name: 'pagePathPlusQueryString'}, {name: 'unifiedScreenClass'}],
+      metrics: [
+        {name: 'activeUsers'},
+        {name: 'sessions'},
+        {name: 'screenPageViews'},
+        {name: 'userEngagementDuration'}
+      ],
+      dimensionFilter: useTitleAndScreen
+        ? {
+            filter: {
+              fieldName: 'pageTitle',
+              stringFilter: {matchType: 'CONTAINS', value: alias}
+            }
+          }
+        : {
+            filter: {
+              fieldName: 'pagePathPlusQueryString',
+              stringFilter: {matchType: 'CONTAINS', value: alias}
+            }
+          },
+      limit: MAX_LIMIT,
+      offset: offset
+    });
+
+    const rows = detailResponse.rows ?? [];
+    fetchedCount = rows.length;
+    allRows = allRows.concat(rows);
+    totalRowCount = detailResponse.rowCount ? Number(detailResponse.rowCount) : Math.max(totalRowCount, allRows.length);
+    
+    // eslint-disable-next-line no-console
+    console.log(`fetchEmployeeReportByAlias: propertyId=${normalizedPropertyId}, alias=${alias}, offset=${offset}, fetched=${fetchedCount}, totalRowCount=${totalRowCount}, accumulated=${allRows.length}`);
+    
+    offset += MAX_LIMIT;
+    // Continue if we got a full batch (means there might be more rows)
+  } while (fetchedCount === MAX_LIMIT);
+
+  const rows = allRows;
   // Aggregate by pagePath hoặc pageTitle tùy theo property
   const pageMap: Record<string, {
     activeUsers: number;
