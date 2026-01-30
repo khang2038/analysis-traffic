@@ -85,22 +85,101 @@ function App() {
     setLoadingAllSitesLeaderboard(true)
     setAllSitesLeaderboard([])
     try {
-      const url = `/api/leaderboard/all?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}&orderMetric=${encodeURIComponent(orderMetric)}&mode=alias`
-      const r = await api(url)
-      const data = await r.json()
-      if (data.error) { setError(data.error); return }
-      
-      const rows = data.rows || []
-      const sorted = rows.sort((a: LeaderboardRow, b: LeaderboardRow) => b[orderMetric] - a[orderMetric])
-        .map((row: LeaderboardRow, idx: number) => ({ ...row, rank: idx + 1 }))
-      
-      console.log('Bảng xếp hạng toàn bộ sites:')
+      // Chia khoảng ngày lớn thành nhiều đoạn nhỏ (tối đa 10 ngày) để tránh timeout trên server
+      const MAX_DAYS_PER_CHUNK = 10
+      const start = new Date(startDate)
+      const end = new Date(endDate)
+      const chunks: { start: string; end: string }[] = []
+
+      if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && start <= end) {
+        let cur = new Date(start)
+        while (cur <= end) {
+          const chunkStart = new Date(cur)
+          const chunkEnd = new Date(cur)
+          chunkEnd.setDate(chunkEnd.getDate() + MAX_DAYS_PER_CHUNK - 1)
+          if (chunkEnd > end) chunkEnd.setTime(end.getTime())
+          chunks.push({
+            start: chunkStart.toISOString().split('T')[0],
+            end: chunkEnd.toISOString().split('T')[0],
+          })
+          cur.setDate(cur.getDate() + MAX_DAYS_PER_CHUNK)
+        }
+      } else {
+        // fallback: nếu parse ngày lỗi, gọi 1 lần như cũ
+        chunks.push({ start: startDate, end: endDate })
+      }
+
+      // Aggregate kết quả từ nhiều chunks theo employeeId
+      type AggRow = {
+        activeUsers: number
+        sessions: number
+        screenPageViews: number
+        totalEngagementTime: number
+        eventCount: number
+        conversions: number
+        totalRevenue: number
+      }
+      const aggMap: Record<string, AggRow> = {}
+
+      for (const c of chunks) {
+        const url = `/api/leaderboard/all?startDate=${encodeURIComponent(c.start)}&endDate=${encodeURIComponent(c.end)}&orderMetric=${encodeURIComponent(orderMetric)}&mode=alias`
+        const r = await api(url)
+        const data = await r.json()
+        if (data.error) {
+          setError(data.error)
+          return
+        }
+        const rows: LeaderboardRow[] = data.rows || []
+        for (const row of rows) {
+          const id = row.employeeId
+          if (!aggMap[id]) {
+            aggMap[id] = {
+              activeUsers: 0,
+              sessions: 0,
+              screenPageViews: 0,
+              totalEngagementTime: 0,
+              eventCount: 0,
+              conversions: 0,
+              totalRevenue: 0,
+            }
+          }
+          aggMap[id].activeUsers += row.activeUsers
+          aggMap[id].sessions += row.sessions
+          aggMap[id].screenPageViews += row.screenPageViews
+          aggMap[id].totalEngagementTime += row.averageEngagementTime * row.activeUsers
+          aggMap[id].eventCount += row.eventCount
+          aggMap[id].conversions += row.conversions
+          aggMap[id].totalRevenue += row.totalRevenue
+        }
+      }
+
+      const merged: LeaderboardRow[] = Object.entries(aggMap).map(([employeeId, v], idx) => {
+        const viewsPerUser = v.activeUsers > 0 ? v.screenPageViews / v.activeUsers : 0
+        const avgEngTime = v.activeUsers > 0 ? v.totalEngagementTime / v.activeUsers : 0
+        return {
+          employeeId,
+          activeUsers: v.activeUsers,
+          sessions: v.sessions,
+          screenPageViews: v.screenPageViews,
+          viewsPerActiveUser: viewsPerUser,
+          averageEngagementTime: avgEngTime,
+          eventCount: v.eventCount,
+          conversions: v.conversions,
+          totalRevenue: v.totalRevenue,
+          rank: idx + 1,
+        }
+      })
+      const sorted = merged
+        .sort((a, b) => b[orderMetric] - a[orderMetric])
+        .map((row, idx) => ({ ...row, rank: idx + 1 }))
+
+      console.log('Bảng xếp hạng toàn bộ sites (gộp cả tháng):')
       console.table(sorted.map((r: LeaderboardRow) => ({
         rank: r.rank,
         employee: r.employeeId,
         screenPageViews: r.screenPageViews,
         activeUsers: r.activeUsers,
-        sessions: r.sessions
+        sessions: r.sessions,
       })))
       setAllSitesLeaderboard(sorted)
     } finally {
