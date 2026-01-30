@@ -98,8 +98,6 @@ function newClient(): BetaAnalyticsDataClient {
   if (jsonEnv) {
     try {
       const credentials = JSON.parse(jsonEnv);
-      // eslint-disable-next-line no-console
-      console.log('Service account loaded from env, email:', credentials.client_email);
       return new BetaAnalyticsDataClient({credentials});
     } catch (err: any) {
       // eslint-disable-next-line no-console
@@ -167,9 +165,6 @@ export async function fetchEmployeeReport(params: EmployeeReportParams, clientOv
     fetchedCount = rows.length;
     allRows = allRows.concat(rows);
     totalRowCount = detailResponse.rowCount ? Number(detailResponse.rowCount) : Math.max(totalRowCount, allRows.length);
-    
-    // eslint-disable-next-line no-console
-    console.log(`fetchEmployeeReport (detail): propertyId=${propertyId}, employeeId=${employeeId}, offset=${offset}, fetched=${fetchedCount}, totalRowCount=${totalRowCount}, accumulated=${allRows.length}`);
     
     offset += MAX_LIMIT;
     // Continue if we got a full batch (means there might be more rows)
@@ -253,9 +248,6 @@ export async function fetchEmployeeReport(params: EmployeeReportParams, clientOv
     fetchedCount = rankRows.length;
     allRankRows = allRankRows.concat(rankRows);
     totalRowCount = rankResponse.rowCount ? Number(rankResponse.rowCount) : Math.max(totalRowCount, allRankRows.length);
-    
-    // eslint-disable-next-line no-console
-    console.log(`fetchEmployeeReport (rank): propertyId=${propertyId}, offset=${offset}, fetched=${fetchedCount}, totalRowCount=${totalRowCount}, accumulated=${allRankRows.length}`);
     
     offset += MAX_LIMIT;
     // Continue if we got a full batch (means there might be more rows)
@@ -350,9 +342,6 @@ export async function fetchLeaderboard(params: {
     fetchedCount = rows.length;
     allRows = allRows.concat(rows);
     totalRowCount = resp.rowCount ? Number(resp.rowCount) : Math.max(totalRowCount, allRows.length);
-    
-    // eslint-disable-next-line no-console
-    console.log(`fetchLeaderboard: propertyId=${propertyId}, offset=${offset}, fetched=${fetchedCount}, totalRowCount=${totalRowCount}, accumulated=${allRows.length}`);
     
     offset += MAX_LIMIT;
     // Continue if we got a full batch (means there might be more rows)
@@ -465,15 +454,9 @@ export async function fetchLeaderboardByAlias(params: {
     allRows = allRows.concat(rows);
     totalRowCount = resp.rowCount ? Number(resp.rowCount) : Math.max(totalRowCount, allRows.length);
     
-    // eslint-disable-next-line no-console
-    console.log(`fetchLeaderboardByAlias: propertyId=${normalizedPropertyId}, offset=${offset}, fetched=${fetchedCount}, totalRowCount=${totalRowCount}, accumulated=${allRows.length}`);
-    
     offset += MAX_LIMIT;
     // Continue if we got a full batch (means there might be more rows)
   } while (fetchedCount === MAX_LIMIT);
-  
-  // eslint-disable-next-line no-console
-  console.log('fetchLeaderboardByAlias: propertyId=', normalizedPropertyId, 'useTitleAndScreen=', useTitleAndScreen, 'allowedAliases=', Array.from(allowedAliases), 'totalRows=', allRows.length, 'totalRowCount=', totalRowCount);
   
   for (const r of allRows) {
     const d = r.dimensionValues ?? [];
@@ -488,8 +471,6 @@ export async function fetchLeaderboardByAlias(params: {
       pageKey = pageTitle;
       alias = extractAliasFromTitle(pageTitle, screenClass, allowedAliases);
       if (!alias) {
-        // eslint-disable-next-line no-console
-        console.log('Skipping row - no alias found in title:', pageTitle, 'screenClass:', screenClass);
         continue;
       }
     } else {
@@ -498,15 +479,11 @@ export async function fetchLeaderboardByAlias(params: {
       pageKey = pagePath;
       alias = extractAliasFromPath(pagePath);
       if (!alias) {
-        // eslint-disable-next-line no-console
-        console.log('Skipping row - no alias extracted from path:', pagePath);
         continue;
       }
       
       // Nếu có aliasToEmployee, chỉ aggregate các alias có trong map
       if (shouldFilterAliases && !allowedAliases.has(alias)) {
-        // eslint-disable-next-line no-console
-        console.log('Skipping row - alias not in allowed:', alias, 'from path:', pagePath);
         continue;
       }
     }
@@ -533,12 +510,6 @@ export async function fetchLeaderboardByAlias(params: {
     map[employeeId].eventCount += toNumber(m[4]?.value);
     map[employeeId].conversions += toNumber(m[5]?.value);
     map[employeeId].totalRevenue += toNumber(m[6]?.value);
-    
-    // Log một số rows để debug
-    if (Math.random() < 0.01) { // Log 1% rows để không spam
-      // eslint-disable-next-line no-console
-      console.log('Sample row:', { pageKey, alias, employeeId, screenPV, activeUsers });
-    }
   }
 
   const rows: LeaderboardRow[] = Object.entries(map)
@@ -558,17 +529,6 @@ export async function fetchLeaderboardByAlias(params: {
     })
     .sort((a, b) => b[orderMetric] - a[orderMetric])
     .map((row, idx) => ({...row, rank: idx + 1}));
-
-  // eslint-disable-next-line no-console
-  console.log('fetchLeaderboardByAlias result:', {
-    totalRows: rows.length,
-    rows: rows.map(r => ({
-      employeeId: r.employeeId,
-      activeUsers: r.activeUsers,
-      screenPageViews: r.screenPageViews,
-      viewsPerActiveUser: r.viewsPerActiveUser
-    }))
-  });
 
   return {
     rows,

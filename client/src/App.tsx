@@ -70,7 +70,6 @@ function App() {
       if ((data.sites || []).length > 0) setSiteId(data.sites[0].id)
     })
     api('/api/aliasMap').then(r => r.json()).then(data => {
-      console.log('Loaded alias map:', data.aliasMap)
       setAliasMap(data.aliasMap || {})
     }).catch(err => {
       console.error('Failed to load alias map:', err)
@@ -87,17 +86,22 @@ function App() {
     setAllSitesLeaderboard([])
     try {
       const url = `/api/leaderboard/all?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}&orderMetric=${encodeURIComponent(orderMetric)}&mode=alias`
-      console.log('Loading all sites leaderboard:', { startDate, endDate, url })
       const r = await api(url)
       const data = await r.json()
-      console.log('All sites API response:', data)
       if (data.error) { setError(data.error); return }
       
       const rows = data.rows || []
       const sorted = rows.sort((a: LeaderboardRow, b: LeaderboardRow) => b[orderMetric] - a[orderMetric])
         .map((row: LeaderboardRow, idx: number) => ({ ...row, rank: idx + 1 }))
       
-      console.log('All sites sorted rows:', sorted.length, sorted)
+      console.log('Bảng xếp hạng toàn bộ sites:')
+      console.table(sorted.map(r => ({
+        rank: r.rank,
+        employee: r.employeeId,
+        screenPageViews: r.screenPageViews,
+        activeUsers: r.activeUsers,
+        sessions: r.sessions
+      })))
       setAllSitesLeaderboard(sorted)
     } finally {
       setLoadingAllSitesLeaderboard(false)
@@ -111,13 +115,9 @@ function App() {
     setLeaderboard([])
     try {
       const url = `/api/leaderboard?propertyId=${encodeURIComponent(siteId)}&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}&orderMetric=${encodeURIComponent(orderMetric)}&mode=alias`
-      console.log('Loading leaderboard:', { siteId, startDate, endDate, url })
       const r = await api(url)
       const data = await r.json()
-      console.log('API response:', data)
       if (data.error) { setError(data.error); return }
-      console.log('Alias map for site:', siteId, aliasMap[siteId])
-      console.log('All rows from API:', data.rows?.length || 0, data.rows)
       
       // Server đã aggregate và filter theo aliasToEmployee rồi
       // Không cần filter lại ở frontend, chỉ cần sort và hiển thị
@@ -126,8 +126,15 @@ function App() {
       // Đảm bảo sort đúng theo orderMetric
       const sorted = rows.sort((a: LeaderboardRow, b: LeaderboardRow) => b[orderMetric] - a[orderMetric])
         .map((row: LeaderboardRow, idx: number) => ({ ...row, rank: idx + 1 }))
-      
-      console.log('Sorted rows:', sorted.length, sorted)
+
+      console.log('Bảng leaderboard theo site:')
+      console.table(sorted.map(r => ({
+        rank: r.rank,
+        employee: r.employeeId,
+        screenPageViews: r.screenPageViews,
+        activeUsers: r.activeUsers,
+        sessions: r.sessions
+      })))
       setLeaderboard(sorted)
     } finally {
       setLoadingLeaderboard(false)
@@ -141,12 +148,24 @@ function App() {
     setReport(null)
     try {
       const url = `/api/report?propertyId=${encodeURIComponent(siteId)}&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}&mode=alias&alias=${encodeURIComponent(alias)}`
-      console.log('Loading report for:', alias, url)
       const r = await api(url)
       const data = await r.json()
-      console.log('Report response:', data)
       if (data.error) { setError(data.error); setReport(null); return }
       setReport(data)
+
+      // Log danh sách link chi tiết
+      if (Array.isArray(data.byPageAndScreen)) {
+        console.log(`Danh sách link cho alias '${alias}':`)
+        console.table(
+          data.byPageAndScreen.map((row: any, idx: number) => ({
+            index: idx + 1,
+            pagePath: row.pagePath,
+            screenPageViews: row.screenPageViews,
+            activeUsers: row.activeUsers,
+            viewsPerActiveUser: row.viewsPerActiveUser
+          }))
+        )
+      }
     } finally {
       setLoadingReport(false)
     }

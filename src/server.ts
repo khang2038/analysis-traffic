@@ -10,24 +10,6 @@ import {loadAliasMapFromEnv, loadDefaultAliasMapFromEnv} from './alias';
 
 dotenv.config();
 
-// Debug: log env variables
-// eslint-disable-next-line no-console
-console.log('=== ENV DEBUG ===');
-// eslint-disable-next-line no-console
-console.log('GA4_SITES:', process.env.GA4_SITES);
-// eslint-disable-next-line no-console
-console.log('GA_SERVICE_ACCOUNT_JSON:', process.env.GA_SERVICE_ACCOUNT_JSON ? 'SET (file path)' : 'NOT SET');
-// eslint-disable-next-line no-console
-console.log('PORT:', process.env.PORT || '3000 (default)');
-// eslint-disable-next-line no-console
-console.log('ALIAS_MAP:', process.env.ALIAS_MAP ? 'SET' : 'NOT SET');
-// eslint-disable-next-line no-console
-console.log('DEFAULT_MODE:', process.env.DEFAULT_MODE || 'alias (default)');
-// eslint-disable-next-line no-console
-console.log('GOOGLE_APPLICATION_CREDENTIALS:', process.env.GOOGLE_APPLICATION_CREDENTIALS || 'NOT SET');
-// eslint-disable-next-line no-console
-console.log('==================');
-
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -44,11 +26,7 @@ if (useOAuth) {
     saveUninitialized: false,
     cookie: { sameSite: 'lax' }
   }));
-  // eslint-disable-next-line no-console
-  console.log('OAuth configured, session enabled');
 } else {
-  // eslint-disable-next-line no-console
-  console.log('Using service account, session disabled');
 }
 
 const sites: SiteProperty[] = parseSitesEnv(process.env.GA4_SITES);
@@ -62,8 +40,6 @@ app.get('/api/sites', (_req, res) => {
 });
 
 app.get('/api/aliasMap', (_req, res) => {
-  // eslint-disable-next-line no-console
-  console.log('ALIAS_MAP endpoint called, returning:', JSON.stringify(aliasMap, null, 2));
   res.json({aliasMap});
 });
 
@@ -128,9 +104,6 @@ app.get('/api/leaderboard/all', async (req, res) => {
     const endDate = String(req.query.endDate || 'today');
     const orderMetric = String(req.query.orderMetric || 'screenPageViews');
     const mode = String(req.query.mode || defaultMode);
-
-    // eslint-disable-next-line no-console
-    console.log('LEADERBOARD_ALL_REQUEST:', { startDate, endDate, mode, totalSites: sites.length });
 
     // Build GA client: service account (default) or OAuth if available
     const client = buildAnalyticsClientFromSession(req.session as any);
@@ -243,8 +216,6 @@ app.get('/api/leaderboard/all', async (req, res) => {
     .sort((a, b) => (b[orderMetric as keyof typeof b] as number) - (a[orderMetric as keyof typeof a] as number))
     .map((row, idx) => ({...row, rank: idx + 1}));
 
-    // eslint-disable-next-line no-console
-    console.log('LEADERBOARD_ALL_RESPONSE:', { totalRows: rows.length, firstFew: rows.slice(0, 5) });
     res.json({
       rows,
       totalEmployees: rows.length,
@@ -268,9 +239,6 @@ app.get('/api/leaderboard', async (req, res) => {
     const orderMetric = String(req.query.orderMetric || 'screenPageViews');
     const mode = String(req.query.mode || defaultMode);
 
-    // eslint-disable-next-line no-console
-    console.log('LEADERBOARD_REQUEST:', { propertyId, startDate, endDate, mode, aliasMapForProperty: aliasMap[propertyId] });
-
     if (!propertyId) return res.status(400).json({error: 'Missing propertyId'});
     // Build GA client: service account (default) or OAuth if available
     const client = buildAnalyticsClientFromSession(req.session as any);
@@ -289,8 +257,6 @@ app.get('/api/leaderboard', async (req, res) => {
           endDate,
           orderMetric: orderMetric as any
         }, client);
-    // eslint-disable-next-line no-console
-    console.log('LEADERBOARD_RESPONSE:', { totalRows: data.rows?.length || 0, firstFew: data.rows?.slice(0, 5) });
     res.json(data);
   } catch (err: any) {
     // eslint-disable-next-line no-console
