@@ -95,7 +95,7 @@ function App() {
         .map((row: LeaderboardRow, idx: number) => ({ ...row, rank: idx + 1 }))
       
       console.log('Bảng xếp hạng toàn bộ sites:')
-      console.table(sorted.map(r => ({
+      console.table(sorted.map((r: LeaderboardRow) => ({
         rank: r.rank,
         employee: r.employeeId,
         screenPageViews: r.screenPageViews,
@@ -128,7 +128,7 @@ function App() {
         .map((row: LeaderboardRow, idx: number) => ({ ...row, rank: idx + 1 }))
 
       console.log('Bảng leaderboard theo site:')
-      console.table(sorted.map(r => ({
+      console.table(sorted.map((r: LeaderboardRow) => ({
         rank: r.rank,
         employee: r.employeeId,
         screenPageViews: r.screenPageViews,
