@@ -380,7 +380,14 @@ export async function fetchLeaderboard(params: {
   };
 }
 
-// Extract alias từ pageTitle + screenClass (cho property 495153878)
+// Property IDs dùng pageTitle + screenClass để extract nhân viên/alias (giống TodayOnUs)
+const PROPERTY_IDS_USE_TITLE_AND_SCREEN = new Set(['495153878', '507326230']); // TodayOnUs, newsandfriends
+
+function useTitleAndScreenForProperty(normalizedPropertyId: string): boolean {
+  return PROPERTY_IDS_USE_TITLE_AND_SCREEN.has(normalizedPropertyId);
+}
+
+// Extract alias từ pageTitle + screenClass (cho property dùng title+screen)
 function extractAliasFromTitle(pageTitle: string, screenClass: string, allowedAliases: Set<string>): string {
   const combined = `${pageTitle} ${screenClass}`.toLowerCase();
   // Tìm alias nào xuất hiện trong combined string
@@ -405,8 +412,8 @@ export async function fetchLeaderboardByAlias(params: {
   const orderMetric = params.orderMetric ?? 'screenPageViews';
   const normalizedPropertyId = normalizePropertyId(propertyId);
   
-  // Property 495153878 dùng pageTitle + screenClass, các property khác dùng pagePath
-  const useTitleAndScreen = normalizedPropertyId === '495153878';
+  // Một số property (TodayOnUs, newsandfriends) dùng pageTitle + screenClass, còn lại dùng pagePath
+  const useTitleAndScreen = useTitleAndScreenForProperty(normalizedPropertyId);
   const allowedAliases = params.aliasToEmployee ? new Set(Object.keys(params.aliasToEmployee)) : new Set<string>();
 
   const map: Record<string, {
@@ -465,7 +472,7 @@ export async function fetchLeaderboardByAlias(params: {
     let alias = '';
     let pageKey = '';
     if (useTitleAndScreen) {
-      // Property 495153878: extract từ pageTitle + screenClass
+      // Property dùng title+screen: extract từ pageTitle + screenClass
       const pageTitle = d[0]?.value ?? '';
       const screenClass = d[1]?.value ?? '';
       pageKey = pageTitle;
@@ -547,7 +554,7 @@ export async function fetchEmployeeReportByAlias(params: {
   const client = clientOverride ?? newClient();
   const {propertyId, alias, startDate, endDate} = params;
   const normalizedPropertyId = normalizePropertyId(propertyId);
-  const useTitleAndScreen = normalizedPropertyId === '495153878';
+  const useTitleAndScreen = useTitleAndScreenForProperty(normalizedPropertyId);
 
   // Pagination: fetch all rows
   const MAX_LIMIT = 100000;
@@ -610,7 +617,7 @@ export async function fetchEmployeeReportByAlias(params: {
   for (const r of rows) {
     const d = r.dimensionValues ?? [];
     const m = r.metricValues ?? [];
-    // Property 495153878 dùng pageTitle, các property khác dùng pagePath
+    // Property dùng title+screen: pageKey là pageTitle; còn lại là pagePath
     const pageKey = d[0]?.value ?? ''; // pageTitle hoặc pagePath
     const activeUsers = toNumber(m[0]?.value);
     const sessions = toNumber(m[1]?.value);
