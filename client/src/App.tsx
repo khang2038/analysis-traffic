@@ -15,6 +15,16 @@ type LeaderboardRow = {
   conversions: number;
   totalRevenue: number;
 }
+type GroupsMap = Record<string, string[]>; // groupName -> list of employeeIds
+type GroupLeaderboardRow = {
+  groupName: string;
+  activeUsers: number;
+  sessions: number;
+  screenPageViews: number;
+  viewsPerActiveUser: number;
+  averageEngagementTime: number;
+  rank: number;
+}
 type Report = {
   totals: {
     activeUsers: number;
@@ -59,6 +69,9 @@ function App() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardRow[]>([])
   const [loadingLeaderboard, setLoadingLeaderboard] = useState<boolean>(false)
   const [aliasMap, setAliasMap] = useState<Record<string, Record<string, string>>>({})
+  const [groups, setGroups] = useState<GroupsMap>({})
+  const [allSitesGroupLeaderboard, setAllSitesGroupLeaderboard] = useState<GroupLeaderboardRow[]>([])
+  const [siteGroupLeaderboard, setSiteGroupLeaderboard] = useState<GroupLeaderboardRow[]>([])
   const [selectedEmployee, setSelectedEmployee] = useState<string>('')
   const [report, setReport] = useState<Report | null>(null)
   const [loadingReport, setLoadingReport] = useState<boolean>(false)
@@ -73,6 +86,11 @@ function App() {
       setAliasMap(data.aliasMap || {})
     }).catch(err => {
       console.error('Failed to load alias map:', err)
+    })
+    api('/api/groups').then(r => r.json()).then(data => {
+      setGroups(data.groups || {})
+    }).catch(err => {
+      console.error('Failed to load groups:', err)
     })
   }, [])
 
@@ -182,6 +200,50 @@ function App() {
         sessions: r.sessions,
       })))
       setAllSitesLeaderboard(sorted)
+      // Build group leaderboard for all sites using existing employee data
+      if (Object.keys(groups).length > 0) {
+        const groupAgg: Record<string, {
+          activeUsers: number;
+          sessions: number;
+          screenPageViews: number;
+          totalEngagementTime: number;
+        }> = {}
+        for (const [groupName, members] of Object.entries(groups)) {
+          for (const row of sorted) {
+            if (!members.includes(row.employeeId)) continue
+            if (!groupAgg[groupName]) {
+              groupAgg[groupName] = {
+                activeUsers: 0,
+                sessions: 0,
+                screenPageViews: 0,
+                totalEngagementTime: 0
+              }
+            }
+            groupAgg[groupName].activeUsers += row.activeUsers
+            groupAgg[groupName].sessions += row.sessions
+            groupAgg[groupName].screenPageViews += row.screenPageViews
+            groupAgg[groupName].totalEngagementTime += row.averageEngagementTime * row.activeUsers
+          }
+        }
+        const groupRows: GroupLeaderboardRow[] = Object.entries(groupAgg).map(([groupName, v]) => {
+          const viewsPerUser = v.activeUsers > 0 ? v.screenPageViews / v.activeUsers : 0
+          const avgEngTime = v.activeUsers > 0 ? v.totalEngagementTime / v.activeUsers : 0
+          return {
+            groupName,
+            activeUsers: v.activeUsers,
+            sessions: v.sessions,
+            screenPageViews: v.screenPageViews,
+            viewsPerActiveUser: viewsPerUser,
+            averageEngagementTime: avgEngTime,
+            rank: 0
+          }
+        })
+          .sort((a, b) => b[orderMetric] - a[orderMetric])
+          .map((row, idx) => ({ ...row, rank: idx + 1 }))
+        setAllSitesGroupLeaderboard(groupRows)
+      } else {
+        setAllSitesGroupLeaderboard([])
+      }
     } finally {
       setLoadingAllSitesLeaderboard(false)
     }
@@ -215,6 +277,50 @@ function App() {
         sessions: r.sessions
       })))
       setLeaderboard(sorted)
+      // Build group leaderboard for current site using existing employee data
+      if (Object.keys(groups).length > 0) {
+        const groupAgg: Record<string, {
+          activeUsers: number;
+          sessions: number;
+          screenPageViews: number;
+          totalEngagementTime: number;
+        }> = {}
+        for (const [groupName, members] of Object.entries(groups)) {
+          for (const row of sorted) {
+            if (!members.includes(row.employeeId)) continue
+            if (!groupAgg[groupName]) {
+              groupAgg[groupName] = {
+                activeUsers: 0,
+                sessions: 0,
+                screenPageViews: 0,
+                totalEngagementTime: 0
+              }
+            }
+            groupAgg[groupName].activeUsers += row.activeUsers
+            groupAgg[groupName].sessions += row.sessions
+            groupAgg[groupName].screenPageViews += row.screenPageViews
+            groupAgg[groupName].totalEngagementTime += row.averageEngagementTime * row.activeUsers
+          }
+        }
+        const groupRows: GroupLeaderboardRow[] = Object.entries(groupAgg).map(([groupName, v]) => {
+          const viewsPerUser = v.activeUsers > 0 ? v.screenPageViews / v.activeUsers : 0
+          const avgEngTime = v.activeUsers > 0 ? v.totalEngagementTime / v.activeUsers : 0
+          return {
+            groupName,
+            activeUsers: v.activeUsers,
+            sessions: v.sessions,
+            screenPageViews: v.screenPageViews,
+            viewsPerActiveUser: viewsPerUser,
+            averageEngagementTime: avgEngTime,
+            rank: 0
+          }
+        })
+          .sort((a, b) => b[orderMetric] - a[orderMetric])
+          .map((row, idx) => ({ ...row, rank: idx + 1 }))
+        setSiteGroupLeaderboard(groupRows)
+      } else {
+        setSiteGroupLeaderboard([])
+      }
     } finally {
       setLoadingLeaderboard(false)
     }
@@ -343,6 +449,46 @@ function App() {
           </table>
         )}
       </div>
+      {/* Bảng xếp hạng theo nhóm (toàn bộ sites) */}
+      {allSitesGroupLeaderboard.length > 0 && (
+        <div className="panel" style={{marginBottom: '18px'}}>
+          <div className="panel-header">Bảng xếp hạng theo nhóm (toàn bộ sites)</div>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Nhóm</th>
+                <th>Số lần xem</th>
+                <th>Số người dùng đang hoạt động</th>
+                <th>Số lượt xem trên mỗi người dùng đang hoạt động</th>
+                <th>Thời gian tương tác trung bình trên mỗi người dùng đang hoạt động</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allSitesGroupLeaderboard.map((row, idx) => {
+                const formatTime = (seconds: number) => {
+                  const mins = Math.floor(seconds / 60)
+                  const secs = Math.floor(seconds % 60)
+                  if (mins > 0) {
+                    return `${mins} phút ${secs} giây`
+                  }
+                  return `${secs} giây`
+                }
+                return (
+                  <tr key={row.groupName}>
+                    <td>{idx + 1}</td>
+                    <td>{row.groupName}</td>
+                    <td>{row.screenPageViews.toLocaleString('vi-VN')}</td>
+                    <td>{row.activeUsers.toLocaleString('vi-VN')}</td>
+                    <td>{row.viewsPerActiveUser.toLocaleString('vi-VN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                    <td>{formatTime(row.averageEngagementTime)}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Controls cho site cụ thể */}
       <div className="controls">
@@ -447,6 +593,45 @@ function App() {
             </>
           )}
         </div>
+        {siteGroupLeaderboard.length > 0 && (
+          <div className="panel">
+            <div className="panel-header">Leaderboard theo nhóm (site hiện tại)</div>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Nhóm</th>
+                  <th>Số lần xem</th>
+                  <th>Số người dùng đang hoạt động</th>
+                  <th>Số lượt xem trên mỗi người dùng đang hoạt động</th>
+                  <th>Thời gian tương tác trung bình trên mỗi người dùng đang hoạt động</th>
+                </tr>
+              </thead>
+              <tbody>
+                {siteGroupLeaderboard.map((row, idx) => {
+                  const formatTime = (seconds: number) => {
+                    const mins = Math.floor(seconds / 60)
+                    const secs = Math.floor(seconds % 60)
+                    if (mins > 0) {
+                      return `${mins} phút ${secs} giây`
+                    }
+                    return `${secs} giây`
+                  }
+                  return (
+                    <tr key={row.groupName}>
+                      <td>{idx + 1}</td>
+                      <td>{row.groupName}</td>
+                      <td>{row.screenPageViews.toLocaleString('vi-VN')}</td>
+                      <td>{row.activeUsers.toLocaleString('vi-VN')}</td>
+                      <td>{row.viewsPerActiveUser.toLocaleString('vi-VN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                      <td>{formatTime(row.averageEngagementTime)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
         <div className="panel">
           <div className="panel-header">Chi tiết: {selectedEmployee ? (aliasMap[siteId]?.[selectedEmployee] || selectedEmployee) : '-'}</div>
           {loadingReport ? (

@@ -6,7 +6,7 @@ import session from 'express-session';
 import dotenv from 'dotenv';
 import {OAuth2Client} from 'google-auth-library';
 import {fetchEmployeeReport, fetchLeaderboard, fetchEmployeeReportByAlias, fetchLeaderboardByAlias, parseSitesEnv, SiteProperty} from './ga';
-import {loadAliasMapFromEnv, loadDefaultAliasMapFromEnv} from './alias';
+import {loadAliasMapFromEnv, loadDefaultAliasMapFromEnv, loadGroupsFromEnv} from './alias';
 
 dotenv.config();
 
@@ -34,6 +34,7 @@ const employeeDimension = process.env.GA4_EMPLOYEE_DIMENSION || 'customUser:empl
 const aliasMap = loadAliasMapFromEnv();
 const defaultMode = (process.env.DEFAULT_MODE || 'alias') as 'alias' | 'employee';
 const defaultAliasMap = loadDefaultAliasMapFromEnv();
+const groupsMap = loadGroupsFromEnv();
 
 app.get('/api/sites', (_req, res) => {
   res.json({sites});
@@ -41,6 +42,10 @@ app.get('/api/sites', (_req, res) => {
 
 app.get('/api/aliasMap', (_req, res) => {
   res.json({aliasMap});
+});
+
+app.get('/api/groups', (_req, res) => {
+  res.json({groups: groupsMap});
 });
 
 app.get('/api/defaultAlias', (req, res) => {
