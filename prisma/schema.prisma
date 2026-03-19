@@ -1,0 +1,142 @@
+// Prisma Schema for AI-Powered Editorial Intelligence Platform
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// Lưu snapshot traffic hàng ngày từ GA4
+model TrafficSnapshot {
+  id             String   @id @default(uuid())
+  propertyId     String
+  employeeId     String?
+  alias          String?
+  pagePath       String
+  pageTitle      String?
+  date           DateTime @db.Date
+  activeUsers    Int      @default(0)
+  sessions       Int      @default(0)
+  pageViews      Int      @default(0)
+  engagementTime Float    @default(0)
+  eventCount     Int      @default(0)
+  conversions    Int      @default(0)
+  totalRevenue   Float    @default(0)
+  createdAt      DateTime @default(now())
+  
+  @@index([propertyId, date])
+  @@index([employeeId, date])
+  @@index([alias, date])
+  @@index([pagePath, date])
+  @@unique([propertyId, employeeId, alias, pagePath, date])
+}
+
+// Lưu kết quả phân tích xu hướng từ AI
+model ContentTrend {
+  id            String   @id @default(uuid())
+  topicKeyword  String
+  propertyId    String?
+  growthRate    Float    // % tăng trưởng
+  momentumScore Float    // Điểm momentum (0-100)
+  relatedPages  Json?    // Array of page paths
+  detectedAt    DateTime @default(now())
+  weekStart     DateTime @db.Date
+  weekEnd       DateTime @db.Date
+  
+  @@index([topicKeyword, detectedAt])
+  @@index([propertyId, detectedAt])
+}
+
+// Lịch sử performance của nhân viên
+model EmployeePerformanceHistory {
+  id         String   @id @default(uuid())
+  employeeId String
+  propertyId String
+  weekStart  DateTime @db.Date
+  weekEnd    DateTime @db.Date
+  totalViews Int      @default(0)
+  totalUsers Int      @default(0)
+  trendScore Float    @default(0) // -1 to 1 (negative = down, positive = up)
+  rank       Int?
+  createdAt  DateTime @default(now())
+  
+  @@unique([employeeId, propertyId, weekStart])
+  @@index([employeeId, weekStart])
+  @@index([propertyId, weekStart])
+}
+
+// Gợi ý nội dung từ AI
+model AIContentRecommendation {
+  id                  String   @id @default(uuid())
+  suggestedTitle      String
+  suggestedTopic      String
+  basedOnKeyword      String
+  targetEmployee      String?
+  targetPropertyId    String?
+  suggestedPublishTime DateTime?
+  confidenceScore     Float    @default(0) // 0-1
+  suggestedOutline    Json?    // Array of H2/H3 headings
+  suggestedKeywords   Json?    // Array of SEO keywords
+  metaDescription     String?
+  status              String   @default("pending") // pending, accepted, rejected
+  createdAt           DateTime @default(now())
+  
+  @@index([targetEmployee, createdAt])
+  @@index([targetPropertyId, createdAt])
+  @@index([basedOnKeyword])
+}
+
+// Phân tích pattern hành vi người đọc
+model ReaderBehaviorPattern {
+  id              String   @id @default(uuid())
+  propertyId      String
+  hour            Int      // 0-23
+  dayOfWeek       Int?     // 0-6 (0 = Sunday)
+  avgSessions     Float
+  bestCategory    String?
+  bounceRate      Float    @default(0)
+  avgScrollDepth  Float    @default(0)
+  avgEngagementTime Float  @default(0)
+  periodStart     DateTime @db.Date
+  periodEnd       DateTime @db.Date
+  createdAt       DateTime @default(now())
+  
+  @@unique([propertyId, hour, periodStart])
+  @@index([propertyId, hour])
+}
+
+// Lưu các topic clusters được AI phát hiện
+model TopicCluster {
+  id            String   @id @default(uuid())
+  clusterName   String
+  keywords      Json     // Array of keywords
+  pagePaths     Json     // Array of page paths
+  propertyId    String?
+  totalViews    Int      @default(0)
+  growthRate    Float    @default(0)
+  detectedAt    DateTime @default(now())
+  
+  @@index([clusterName, detectedAt])
+  @@index([propertyId, detectedAt])
+}
+
+// Alert khi có spike hoặc anomaly
+model TrendAlert {
+  id            String   @id @default(uuid())
+  alertType     String   // "spike", "drop", "trend", "opportunity"
+  propertyId    String?
+  employeeId    String?
+  pagePath      String?
+  message       String
+  severity      String   @default("info") // info, warning, critical
+  metadata      Json?    // Additional data
+  acknowledged  Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  
+  @@index([alertType, createdAt])
+  @@index([propertyId, createdAt])
+  @@index([acknowledged])
+}
