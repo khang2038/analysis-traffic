@@ -188,10 +188,10 @@ const TeamLeaderboard = ({ leaderboard, getEmployeeName, groupsMap, t }: TeamLea
         <table className="data-table">
           <thead style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--bg-sidebar, #0f172a)' }}>
             <tr>
-              <th style={{ width: '80px', textAlign: 'center' }}>Rank</th>
-              <th>Nhóm</th>
-              <th>Số lần xem</th>
-              <th>Số người dùng đang hoạt động</th>
+              <th style={{ width: '80px', textAlign: 'center' }}>{t('leaderboard.rank', 'Rank')}</th>
+              <th>{t('leaderboard.team', 'Nhóm')}</th>
+              <th>{t('leaderboard.views_count', 'Số lần xem')}</th>
+              <th>{t('leaderboard.active_users_count', 'Số người dùng đang hoạt động')}</th>
             </tr>
           </thead>
           <tbody>

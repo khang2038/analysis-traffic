@@ -9,6 +9,7 @@
     "start": "node dist/server.js",
     "dev": "ts-node -r dotenv/config src/server.ts",
     "dev:client": "cd client && npm run dev",
+    "dev:all": "concurrently \"npm run dev\" \"npm run dev:client\"",
     "preview:client": "cd client && npm run preview",
     "postinstall": "cd client && npm install",
     "prisma:generate": "prisma generate",
@@ -42,6 +43,7 @@
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express-session": "^1.18.2",
+    "concurrently": "^9.2.1",
     "prisma": "^5.20.0"
   }
 }
