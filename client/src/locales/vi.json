@@ -1,0 +1,86 @@
+{
+  "common": {
+    "dashboard": "Bảng điều khiển",
+    "radar": "Radar Xu hướng",
+    "lab": "Phòng Lab AI",
+    "coach": "Huấn luyện viên AI",
+    "settings": "Cài đặt",
+    "help": "Trung tâm trợ giúp",
+    "welcome": "Chào mừng trở lại!",
+    "monitoring": "Đang theo dõi hiệu suất trên {{count}} trang web.",
+    "insight_ai": "Trí tuệ Insight",
+    "toggle_theme": "Chuyển chế độ tối/sáng",
+    "language": "Ngôn ngữ",
+    "views": "Lượt xem",
+    "realtime": "Thời gian thực"
+  },
+  "stats": {
+    "network_users": "Người dùng mạng",
+    "page_views": "Lượt xem trang",
+    "avg_engagement": "Tương tác TB"
+  },
+  "leaderboard": {
+    "title": "Bảng xếp hạng hiệu suất nhân sự",
+    "team_title": "Bảng xếp hạng theo nhóm",
+    "all_properties": "Tất cả các trang web",
+    "rank": "Hạng",
+    "user": "Người dùng",
+    "engagement": "Tương tác",
+    "team": "Nhóm",
+    "views_count": "Số lần xem",
+    "active_users_count": "Số người dùng đang hoạt động"
+  },
+  "drilldown": {
+    "title": "Thông tin chi tiết",
+    "site_distribution": "Phân phối lưu lượng truy cập",
+    "top_performance": "Danh sách hiệu suất cao nhất",
+    "select_entity": "Chọn một đơn vị để xem chi tiết",
+    "page_path": "Đường dẫn trang"
+  },
+  "radar": {
+    "scanning": "Đang quét radar xu hướng...",
+    "no_data": "Không có dữ liệu xu hướng cho trang web này.",
+    "keywords": "Từ khóa xu hướng",
+    "spikes": "Đột biến lưu lượng cao",
+    "no_spikes": "Không phát hiện đột biến đáng kể",
+    "heatmap": "Bản đồ nhiệt tương tác",
+    "heatmap_sub": "Hoạt động cao điểm của người dùng trong chu kỳ 24 giờ"
+  },
+  "lab": {
+    "brief_generator": "Trình tạo tóm tắt nội dung AI",
+    "placeholder": "Nhập chủ đề hoặc từ khóa được tìm thấy...",
+    "generate": "Tạo tóm tắt",
+    "generating": "Đang tạo...",
+    "enter_topic": "Nhập chủ đề để tạo tóm tắt nội dung bằng AI",
+    "gap_analyzer": "Trình phân tích khoảng trống nội dung",
+    "high_priority": "Ưu tiên cao",
+    "opportunity": "Cơ hội"
+  },
+  "coach": {
+    "title": "Huấn luyện viên hiệu suất",
+    "consulting": "Đang tư vấn cho {{name}}",
+    "global": "Tư vấn chiến lược toàn cầu",
+    "refresh": "Làm mới",
+    "reviewing": "AI đang xem xét các chỉ số hiệu suất của bạn...",
+    "no_data": "Chưa có dữ liệu tư vấn.",
+    "predictive_intel": "Trí tuệ dự báo",
+    "forecast_sub": "Dự báo phạm vi tiếp cận dựa trên chủ đề và thời gian",
+    "article_topic": "Chủ đề bài viết",
+    "publish_time": "Thời gian xuất bản",
+    "forecast": "Dự báo lưu lượng",
+    "calculating": "Đang tính toán...",
+    "estimated_views": "Lượt xem dự kiến",
+    "confidence": "Độ tin cậy"
+  },
+  "realtime": {
+    "active_users": "Người dùng hoạt động",
+    "last_30_mins": "Trong 30 phút qua",
+    "top_pages": "Trang xem nhiều nhất",
+    "page": "Trang",
+    "active": "Hoạt động",
+    "top_sources": "Nguồn lưu lượng",
+    "top_locations": "Vị trí hàng đầu",
+    "recent_activity": "Hoạt động gần đây",
+    "today_so_far": "Tính đến hôm nay"
+  }
+}

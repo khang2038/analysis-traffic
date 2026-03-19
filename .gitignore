@@ -26,6 +26,7 @@ build/
 !client/tsconfig.json
 !client/tsconfig.app.json
 !client/tsconfig.node.json
+!client/src/locales/*.json
 !client/vite.config.ts
 
 # IDE

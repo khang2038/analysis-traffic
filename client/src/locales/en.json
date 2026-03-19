@@ -1,0 +1,86 @@
+{
+  "common": {
+    "dashboard": "Dashboard",
+    "radar": "Trend Radar",
+    "lab": "AI Content Lab",
+    "coach": "AI Coach",
+    "settings": "Settings",
+    "help": "Help Center",
+    "welcome": "Welcome back!",
+    "monitoring": "Monitoring performance across {{count}} properties.",
+    "insight_ai": "Insight AI",
+    "toggle_theme": "Toggle Theme",
+    "language": "Language",
+    "views": "Views",
+    "realtime": "Real-time"
+  },
+  "stats": {
+    "network_users": "Network Users",
+    "page_views": "Page Views",
+    "avg_engagement": "Avg Engagement"
+  },
+  "leaderboard": {
+    "title": "Personnel Performance Leaderboard",
+    "team_title": "Team Leaderboard",
+    "all_properties": "All connected properties",
+    "rank": "Rank",
+    "user": "User",
+    "engagement": "Engagement",
+    "team": "Team",
+    "views_count": "Views",
+    "active_users_count": "Active Users"
+  },
+  "drilldown": {
+    "title": "Detailed Drill-down",
+    "site_distribution": "Site Traffic Distribution",
+    "top_performance": "Top Performance List",
+    "select_entity": "Select an entity for details",
+    "page_path": "Page Path"
+  },
+  "radar": {
+    "scanning": "Scanning trend radar...",
+    "no_data": "No trend data available for this property.",
+    "keywords": "Trending Keywords",
+    "spikes": "High Traffic Spikes",
+    "no_spikes": "No significant spikes detected",
+    "heatmap": "Engagement Heatmap",
+    "heatmap_sub": "Peak user activity across 24-hour cycle"
+  },
+  "lab": {
+    "brief_generator": "AI Content Brief Generator",
+    "placeholder": "Enter topic or keyword discovered...",
+    "generate": "Generate Brief",
+    "generating": "Generating...",
+    "enter_topic": "Enter a topic to generate an AI-powered content brief",
+    "gap_analyzer": "Content Gap Analyzer",
+    "high_priority": "High Priority",
+    "opportunity": "Opportunity"
+  },
+  "coach": {
+    "title": "Performance Coach",
+    "consulting": "Consulting for {{name}}",
+    "global": "Global strategy consulting",
+    "refresh": "Refresh",
+    "reviewing": "AI is reviewing your performance metrics...",
+    "no_data": "No advisory data available yet.",
+    "predictive_intel": "Predictive Intel",
+    "forecast_sub": "Forecast reach based on topic and timing",
+    "article_topic": "Article Topic",
+    "publish_time": "Publish Time",
+    "forecast": "Forecast Traffic",
+    "calculating": "Calculating...",
+    "estimated_views": "Estimated Views",
+    "confidence": "Confidence"
+  },
+  "realtime": {
+    "active_users": "Active Users",
+    "last_30_mins": "In last 30 minutes",
+    "top_pages": "Most Viewed Pages",
+    "page": "Page",
+    "active": "Active",
+    "top_sources": "Traffic Sources",
+    "top_locations": "Top Locations",
+    "recent_activity": "Recent Activity",
+    "today_so_far": "Today so far"
+  }
+}
