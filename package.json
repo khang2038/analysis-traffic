@@ -7,10 +7,14 @@
     "build:client": "cd client && npm install && npm run build",
     "build:all": "npm run build && npm run build:client",
     "start": "node dist/server.js",
-    "dev": "ts-node src/server.ts",
+    "dev": "ts-node -r dotenv/config src/server.ts",
     "dev:client": "cd client && npm run dev",
+    "dev:all": "concurrently \"npm run dev\" \"npm run dev:client\"",
     "preview:client": "cd client && npm run preview",
     "postinstall": "cd client && npm install",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -19,18 +23,27 @@
   "description": "",
   "dependencies": {
     "@google-analytics/data": "^5.2.1",
+    "@google/generative-ai": "^0.24.1",
+    "@prisma/client": "^5.20.0",
     "@types/express": "^5.0.5",
     "@types/node": "^24.10.0",
+    "@types/node-cron": "^3.0.11",
+    "axios": "^1.7.9",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "express-session": "^1.18.2",
     "google-auth-library": "^10.5.0",
+    "node-cron": "^3.0.3",
+    "openai": "^4.68.0",
+    "pg": "^8.13.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
-    "@types/express-session": "^1.18.2"
+    "@types/express-session": "^1.18.2",
+    "concurrently": "^9.2.1",
+    "prisma": "^5.20.0"
   }
 }
