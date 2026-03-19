@@ -1,5 +1,26 @@
-import {BetaAnalyticsDataClient} from '@google-analytics/data';
-import {extractAliasFromPath} from './alias';
+import { BetaAnalyticsDataClient } from '@google-analytics/data';
+import { extractAliasFromPath } from './alias';
+
+export type RealtimeReport = {
+  activeUsers: number;
+  byPage: Array<{
+    title: string;
+    path: string;
+    activeUsers: number;
+  }>;
+  bySource: Array<{
+    source: string;
+    medium: string;
+    activeUsers: number;
+  }>;
+  byCity: Array<{
+    country: string;
+    countryId?: string;
+    city: string;
+    activeUsers: number;
+  }>;
+  isFallback?: boolean;
+};
 
 export type SiteProperty = {
   id: string; // GA4 property ID
@@ -87,25 +108,25 @@ export function parseSitesEnv(envValue: string | undefined): SiteProperty[] {
         throw new Error('GA4_SITES must be formatted as "label:propertyId,label2:propertyId2"');
       }
       id = normalizePropertyId(id || label);
-      return {label, id};
+      return { label, id };
     });
 }
 
-function newClient(): BetaAnalyticsDataClient {
+export function newClient(): BetaAnalyticsDataClient {
   // Uses GOOGLE_APPLICATION_CREDENTIALS or explicit JSON key via env
   // If GA_SERVICE_ACCOUNT_JSON is set, parse it as JSON string directly
   const jsonEnv = process.env.GA_SERVICE_ACCOUNT_JSON;
   if (jsonEnv) {
     try {
       const credentials = JSON.parse(jsonEnv);
-      return new BetaAnalyticsDataClient({credentials});
+      return new BetaAnalyticsDataClient({ credentials, fallback: true });
     } catch (err: any) {
       // eslint-disable-next-line no-console
       console.error('Failed to parse GA_SERVICE_ACCOUNT_JSON as JSON:', err.message);
       throw new Error('GA_SERVICE_ACCOUNT_JSON must be a valid JSON string');
     }
   }
-  return new BetaAnalyticsDataClient();
+  return new BetaAnalyticsDataClient({ fallback: true });
 }
 
 function toNumber(value: string | null | undefined): number {
@@ -116,7 +137,7 @@ function toNumber(value: string | null | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function normalizePropertyId(id: string): string {
+export function normalizePropertyId(id: string): string {
   // Extract numeric GA4 property id
   // Remove any "properties/" prefix and extract digits
   let cleaned = (id || '').replace(/^properties\//, '').trim();
@@ -127,7 +148,7 @@ function normalizePropertyId(id: string): string {
 export async function fetchEmployeeReport(params: EmployeeReportParams, clientOverride?: BetaAnalyticsDataClient): Promise<EmployeeReport> {
   const client = clientOverride ?? newClient();
 
-  const {propertyId, employeeDimension, employeeId, startDate, endDate} = params;
+  const { propertyId, employeeDimension, employeeId, startDate, endDate } = params;
 
   // 1) Totals + table by page path + screen class for this employee
   // Pagination: fetch all rows
@@ -140,21 +161,21 @@ export async function fetchEmployeeReport(params: EmployeeReportParams, clientOv
   do {
     const [detailResponse] = await client.runReport({
       property: `properties/${normalizePropertyId(propertyId)}`,
-      dateRanges: [{startDate, endDate}],
+      dateRanges: [{ startDate, endDate }],
       dimensions: [
-        {name: 'pagePathPlusQueryString'},
-        {name: 'unifiedScreenClass'}
+        { name: 'pagePathPlusQueryString' },
+        { name: 'unifiedScreenClass' }
       ],
       metrics: [
-        {name: 'activeUsers'},
-        {name: 'sessions'},
-        {name: 'screenPageViews'},
-        {name: 'userEngagementDuration'}
+        { name: 'activeUsers' },
+        { name: 'sessions' },
+        { name: 'screenPageViews' },
+        { name: 'userEngagementDuration' }
       ],
       dimensionFilter: {
         filter: {
           fieldName: employeeDimension,
-          stringFilter: {matchType: 'EXACT', value: employeeId}
+          stringFilter: { matchType: 'EXACT', value: employeeId }
         }
       },
       limit: MAX_LIMIT,
@@ -165,7 +186,7 @@ export async function fetchEmployeeReport(params: EmployeeReportParams, clientOv
     fetchedCount = rows.length;
     allRows = allRows.concat(rows);
     totalRowCount = detailResponse.rowCount ? Number(detailResponse.rowCount) : Math.max(totalRowCount, allRows.length);
-    
+
     offset += MAX_LIMIT;
     // Continue if we got a full batch (means there might be more rows)
   } while (fetchedCount === MAX_LIMIT);
@@ -178,7 +199,7 @@ export async function fetchEmployeeReport(params: EmployeeReportParams, clientOv
     screenPageViews: number;
     engagementTime: number;
   }> = {};
-  
+
   for (const r of rows) {
     const d = r.dimensionValues ?? [];
     const m = r.metricValues ?? [];
@@ -187,7 +208,7 @@ export async function fetchEmployeeReport(params: EmployeeReportParams, clientOv
     const sessions = toNumber(m[1]?.value);
     const screenPageViews = toNumber(m[2]?.value);
     const engagementTime = toNumber(m[3]?.value);
-    
+
     if (!pageMap[pagePath]) {
       pageMap[pagePath] = {
         activeUsers: 0,
@@ -201,12 +222,12 @@ export async function fetchEmployeeReport(params: EmployeeReportParams, clientOv
     pageMap[pagePath].screenPageViews += screenPageViews;
     pageMap[pagePath].engagementTime += engagementTime;
   }
-  
+
   let totalActiveUsers = 0;
   let totalSessions = 0;
   let totalScreenPageViews = 0;
   let totalEngagementTime = 0;
-  
+
   const byPageAndScreen = Object.entries(pageMap)
     .map(([pagePath, data]) => {
       totalActiveUsers += data.activeUsers;
@@ -236,10 +257,10 @@ export async function fetchEmployeeReport(params: EmployeeReportParams, clientOv
   do {
     const [rankResponse] = await client.runReport({
       property: `properties/${normalizePropertyId(propertyId)}`,
-      dateRanges: [{startDate, endDate}],
-      dimensions: [{name: employeeDimension}],
-      metrics: [{name: metricForRank}],
-      orderBys: [{desc: true, metric: {metricName: metricForRank}}],
+      dateRanges: [{ startDate, endDate }],
+      dimensions: [{ name: employeeDimension }],
+      metrics: [{ name: metricForRank }],
+      orderBys: [{ desc: true, metric: { metricName: metricForRank } }],
       limit: MAX_LIMIT,
       offset: offset
     });
@@ -248,7 +269,7 @@ export async function fetchEmployeeReport(params: EmployeeReportParams, clientOv
     fetchedCount = rankRows.length;
     allRankRows = allRankRows.concat(rankRows);
     totalRowCount = rankResponse.rowCount ? Number(rankResponse.rowCount) : Math.max(totalRowCount, allRankRows.length);
-    
+
     offset += MAX_LIMIT;
     // Continue if we got a full batch (means there might be more rows)
   } while (fetchedCount === MAX_LIMIT);
@@ -256,11 +277,11 @@ export async function fetchEmployeeReport(params: EmployeeReportParams, clientOv
   // Get site totals (toàn bộ site, không filter)
   const [siteTotalsResponse] = await client.runReport({
     property: `properties/${normalizePropertyId(propertyId)}`,
-    dateRanges: [{startDate, endDate}],
+    dateRanges: [{ startDate, endDate }],
     dimensions: [],
     metrics: [
-      {name: 'activeUsers'},
-      {name: 'screenPageViews'}
+      { name: 'activeUsers' },
+      { name: 'screenPageViews' }
     ],
     limit: 1
   });
@@ -309,7 +330,7 @@ export async function fetchLeaderboard(params: {
   limit?: number;
 }, clientOverride?: BetaAnalyticsDataClient): Promise<Leaderboard> {
   const client = clientOverride ?? newClient();
-  const {propertyId, employeeDimension, startDate, endDate} = params;
+  const { propertyId, employeeDimension, startDate, endDate } = params;
   const orderMetric = params.orderMetric ?? 'screenPageViews';
 
   // Pagination: fetch all rows
@@ -322,18 +343,18 @@ export async function fetchLeaderboard(params: {
   do {
     const [resp] = await client.runReport({
       property: `properties/${normalizePropertyId(propertyId)}`,
-      dateRanges: [{startDate, endDate}],
-      dimensions: [{name: employeeDimension}],
+      dateRanges: [{ startDate, endDate }],
+      dimensions: [{ name: employeeDimension }],
       metrics: [
-        {name: 'activeUsers'},
-        {name: 'sessions'},
-        {name: 'screenPageViews'},
-        {name: 'userEngagementDuration'},
-        {name: 'eventCount'},
-        {name: 'conversions'},
-        {name: 'totalRevenue'}
+        { name: 'activeUsers' },
+        { name: 'sessions' },
+        { name: 'screenPageViews' },
+        { name: 'userEngagementDuration' },
+        { name: 'eventCount' },
+        { name: 'conversions' },
+        { name: 'totalRevenue' }
       ],
-      orderBys: [{desc: true, metric: {metricName: orderMetric}}],
+      orderBys: [{ desc: true, metric: { metricName: orderMetric } }],
       limit: MAX_LIMIT,
       offset: offset
     });
@@ -342,7 +363,7 @@ export async function fetchLeaderboard(params: {
     fetchedCount = rows.length;
     allRows = allRows.concat(rows);
     totalRowCount = resp.rowCount ? Number(resp.rowCount) : Math.max(totalRowCount, allRows.length);
-    
+
     offset += MAX_LIMIT;
     // Continue if we got a full batch (means there might be more rows)
   } while (fetchedCount === MAX_LIMIT);
@@ -358,7 +379,7 @@ export async function fetchLeaderboard(params: {
     const eventCount = toNumber(m[4]?.value);
     const conversions = toNumber(m[5]?.value);
     const totalRevenue = toNumber(m[6]?.value);
-    
+
     return {
       employeeId: d[0]?.value ?? '',
       activeUsers,
@@ -380,7 +401,14 @@ export async function fetchLeaderboard(params: {
   };
 }
 
-// Extract alias từ pageTitle + screenClass (cho property 495153878)
+// Property IDs dùng pageTitle + screenClass để extract nhân viên/alias (giống TodayOnUs)
+const PROPERTY_IDS_USE_TITLE_AND_SCREEN = new Set(['495153878', '507326230']); // TodayOnUs, newsandfriends
+
+function useTitleAndScreenForProperty(normalizedPropertyId: string): boolean {
+  return PROPERTY_IDS_USE_TITLE_AND_SCREEN.has(normalizedPropertyId);
+}
+
+// Extract alias từ pageTitle + screenClass (cho property dùng title+screen)
 function extractAliasFromTitle(pageTitle: string, screenClass: string, allowedAliases: Set<string>): string {
   const combined = `${pageTitle} ${screenClass}`.toLowerCase();
   // Tìm alias nào xuất hiện trong combined string
@@ -401,12 +429,12 @@ export async function fetchLeaderboardByAlias(params: {
   aliasToEmployee?: Record<string, string>; // alias -> employeeId
 }, clientOverride?: BetaAnalyticsDataClient): Promise<Leaderboard> {
   const client = clientOverride ?? newClient();
-  const {propertyId, startDate, endDate} = params;
+  const { propertyId, startDate, endDate } = params;
   const orderMetric = params.orderMetric ?? 'screenPageViews';
   const normalizedPropertyId = normalizePropertyId(propertyId);
-  
-  // Property 495153878 dùng pageTitle + screenClass, các property khác dùng pagePath
-  const useTitleAndScreen = normalizedPropertyId === '495153878';
+
+  // Một số property (TodayOnUs, newsandfriends) dùng pageTitle + screenClass, còn lại dùng pagePath
+  const useTitleAndScreen = useTitleAndScreenForProperty(normalizedPropertyId);
   const allowedAliases = params.aliasToEmployee ? new Set(Object.keys(params.aliasToEmployee)) : new Set<string>();
 
   const map: Record<string, {
@@ -431,20 +459,20 @@ export async function fetchLeaderboardByAlias(params: {
   do {
     const [resp] = await client.runReport({
       property: `properties/${normalizedPropertyId}`,
-      dateRanges: [{startDate, endDate}],
-      dimensions: useTitleAndScreen 
-        ? [{name: 'pageTitle'}, {name: 'unifiedScreenClass'}]
-        : [{name: 'pagePathPlusQueryString'}],
+      dateRanges: [{ startDate, endDate }],
+      dimensions: useTitleAndScreen
+        ? [{ name: 'pageTitle' }, { name: 'unifiedScreenClass' }]
+        : [{ name: 'pagePathPlusQueryString' }],
       metrics: [
-        {name: 'activeUsers'},
-        {name: 'sessions'},
-        {name: 'screenPageViews'},
-        {name: 'userEngagementDuration'},
-        {name: 'eventCount'},
-        {name: 'conversions'},
-        {name: 'totalRevenue'}
+        { name: 'activeUsers' },
+        { name: 'sessions' },
+        { name: 'screenPageViews' },
+        { name: 'userEngagementDuration' },
+        { name: 'eventCount' },
+        { name: 'conversions' },
+        { name: 'totalRevenue' }
       ],
-      orderBys: [{desc: true, metric: {metricName: 'screenPageViews'}}],
+      orderBys: [{ desc: true, metric: { metricName: 'screenPageViews' } }],
       limit: MAX_LIMIT,
       offset: offset
     });
@@ -453,19 +481,19 @@ export async function fetchLeaderboardByAlias(params: {
     fetchedCount = rows.length;
     allRows = allRows.concat(rows);
     totalRowCount = resp.rowCount ? Number(resp.rowCount) : Math.max(totalRowCount, allRows.length);
-    
+
     offset += MAX_LIMIT;
     // Continue if we got a full batch (means there might be more rows)
   } while (fetchedCount === MAX_LIMIT);
-  
+
   for (const r of allRows) {
     const d = r.dimensionValues ?? [];
     const m = r.metricValues ?? [];
-    
+
     let alias = '';
     let pageKey = '';
     if (useTitleAndScreen) {
-      // Property 495153878: extract từ pageTitle + screenClass
+      // Property dùng title+screen: extract từ pageTitle + screenClass
       const pageTitle = d[0]?.value ?? '';
       const screenClass = d[1]?.value ?? '';
       pageKey = pageTitle;
@@ -481,17 +509,17 @@ export async function fetchLeaderboardByAlias(params: {
       if (!alias) {
         continue;
       }
-      
+
       // Nếu có aliasToEmployee, chỉ aggregate các alias có trong map
       if (shouldFilterAliases && !allowedAliases.has(alias)) {
         continue;
       }
     }
-    
+
     const employeeId = params.aliasToEmployee?.[alias] ?? alias;
     const screenPV = toNumber(m[2]?.value);
     const activeUsers = toNumber(m[0]?.value);
-    
+
     if (!map[employeeId]) {
       map[employeeId] = {
         activeUsers: 0,
@@ -528,7 +556,7 @@ export async function fetchLeaderboardByAlias(params: {
       };
     })
     .sort((a, b) => b[orderMetric] - a[orderMetric])
-    .map((row, idx) => ({...row, rank: idx + 1}));
+    .map((row, idx) => ({ ...row, rank: idx + 1 }));
 
   return {
     rows,
@@ -545,9 +573,9 @@ export async function fetchEmployeeReportByAlias(params: {
   aliasToEmployee?: Record<string, string>;
 }, clientOverride?: BetaAnalyticsDataClient): Promise<EmployeeReport> {
   const client = clientOverride ?? newClient();
-  const {propertyId, alias, startDate, endDate} = params;
+  const { propertyId, alias, startDate, endDate } = params;
   const normalizedPropertyId = normalizePropertyId(propertyId);
-  const useTitleAndScreen = normalizedPropertyId === '495153878';
+  const useTitleAndScreen = useTitleAndScreenForProperty(normalizedPropertyId);
 
   // Pagination: fetch all rows
   const MAX_LIMIT = 100000;
@@ -559,29 +587,29 @@ export async function fetchEmployeeReportByAlias(params: {
   do {
     const [detailResponse] = await client.runReport({
       property: `properties/${normalizedPropertyId}`,
-      dateRanges: [{startDate, endDate}],
+      dateRanges: [{ startDate, endDate }],
       dimensions: useTitleAndScreen
-        ? [{name: 'pageTitle'}, {name: 'unifiedScreenClass'}]
-        : [{name: 'pagePathPlusQueryString'}, {name: 'unifiedScreenClass'}],
+        ? [{ name: 'pageTitle' }, { name: 'unifiedScreenClass' }]
+        : [{ name: 'pagePathPlusQueryString' }, { name: 'unifiedScreenClass' }],
       metrics: [
-        {name: 'activeUsers'},
-        {name: 'sessions'},
-        {name: 'screenPageViews'},
-        {name: 'userEngagementDuration'}
+        { name: 'activeUsers' },
+        { name: 'sessions' },
+        { name: 'screenPageViews' },
+        { name: 'userEngagementDuration' }
       ],
       dimensionFilter: useTitleAndScreen
         ? {
-            filter: {
-              fieldName: 'pageTitle',
-              stringFilter: {matchType: 'CONTAINS', value: alias}
-            }
+          filter: {
+            fieldName: 'pageTitle',
+            stringFilter: { matchType: 'CONTAINS', value: alias }
           }
+        }
         : {
-            filter: {
-              fieldName: 'pagePathPlusQueryString',
-              stringFilter: {matchType: 'CONTAINS', value: alias}
-            }
-          },
+          filter: {
+            fieldName: 'pagePathPlusQueryString',
+            stringFilter: { matchType: 'CONTAINS', value: alias }
+          }
+        },
       limit: MAX_LIMIT,
       offset: offset
     });
@@ -590,10 +618,10 @@ export async function fetchEmployeeReportByAlias(params: {
     fetchedCount = rows.length;
     allRows = allRows.concat(rows);
     totalRowCount = detailResponse.rowCount ? Number(detailResponse.rowCount) : Math.max(totalRowCount, allRows.length);
-    
+
     // eslint-disable-next-line no-console
     console.log(`fetchEmployeeReportByAlias: propertyId=${normalizedPropertyId}, alias=${alias}, offset=${offset}, fetched=${fetchedCount}, totalRowCount=${totalRowCount}, accumulated=${allRows.length}`);
-    
+
     offset += MAX_LIMIT;
     // Continue if we got a full batch (means there might be more rows)
   } while (fetchedCount === MAX_LIMIT);
@@ -606,17 +634,17 @@ export async function fetchEmployeeReportByAlias(params: {
     screenPageViews: number;
     engagementTime: number;
   }> = {};
-  
+
   for (const r of rows) {
     const d = r.dimensionValues ?? [];
     const m = r.metricValues ?? [];
-    // Property 495153878 dùng pageTitle, các property khác dùng pagePath
+    // Property dùng title+screen: pageKey là pageTitle; còn lại là pagePath
     const pageKey = d[0]?.value ?? ''; // pageTitle hoặc pagePath
     const activeUsers = toNumber(m[0]?.value);
     const sessions = toNumber(m[1]?.value);
     const screenPageViews = toNumber(m[2]?.value);
     const engagementTime = toNumber(m[3]?.value);
-    
+
     if (!pageMap[pageKey]) {
       pageMap[pageKey] = {
         activeUsers: 0,
@@ -630,12 +658,12 @@ export async function fetchEmployeeReportByAlias(params: {
     pageMap[pageKey].screenPageViews += screenPageViews;
     pageMap[pageKey].engagementTime += engagementTime;
   }
-  
+
   let totalActiveUsers = 0;
   let totalSessions = 0;
   let totalScreenPageViews = 0;
   let totalEngagementTime = 0;
-  
+
   const byPageAndScreen = Object.entries(pageMap)
     .map(([pageKey, data]) => {
       totalActiveUsers += data.activeUsers;
@@ -657,11 +685,11 @@ export async function fetchEmployeeReportByAlias(params: {
   // Get site totals (toàn bộ site, không filter)
   const [siteTotalsResponse] = await client.runReport({
     property: `properties/${normalizePropertyId(propertyId)}`,
-    dateRanges: [{startDate, endDate}],
+    dateRanges: [{ startDate, endDate }],
     dimensions: [],
     metrics: [
-      {name: 'activeUsers'},
-      {name: 'screenPageViews'}
+      { name: 'activeUsers' },
+      { name: 'screenPageViews' }
     ],
     limit: 1
   });
@@ -701,6 +729,234 @@ export async function fetchEmployeeReportByAlias(params: {
       metric: 'screenPageViews'
     }
   };
+}
+
+export async function fetchRealtimeReport(propertyId: string, clientOverride?: BetaAnalyticsDataClient): Promise<RealtimeReport> {
+  const client = clientOverride ?? newClient();
+
+  try {
+    const [resp] = await client.runRealtimeReport({
+      property: `properties/${normalizePropertyId(propertyId)}`,
+      dimensions: [
+        { name: 'unifiedPageTitle' },
+        { name: 'unifiedPagePath' },
+        { name: 'source' },
+        { name: 'medium' },
+        { name: 'country' },
+        { name: 'city' }
+      ],
+      metrics: [
+        { name: 'activeUsers' },
+        { name: 'eventCount' }
+      ],
+    });
+
+    const pageMap: Record<string, { title: string; activeUsers: number; views: number }> = {};
+    const sourceMap: Record<string, { medium: string; activeUsers: number }> = {};
+    const cityMap: Record<string, { country: string; countryId: string; activeUsers: number }> = {};
+
+    (resp.rows || []).forEach(row => {
+      const dims = row.dimensionValues || [];
+      const metrics = row.metricValues || [];
+      const activeUsers = toNumber(metrics[0]?.value);
+      const views = toNumber(metrics[1]?.value);
+
+      // Page data
+      const title = dims[0]?.value || '';
+      const path = dims[1]?.value || '';
+      if (path) {
+        if (!pageMap[path]) pageMap[path] = { title, activeUsers: 0, views: 0 };
+        pageMap[path].activeUsers += activeUsers;
+        pageMap[path].views += views;
+      }
+
+      // Source data
+      const source = dims[2]?.value || '(direct)';
+      const medium = dims[3]?.value || '(none)';
+      if (source) {
+        if (!sourceMap[source]) sourceMap[source] = { medium, activeUsers: 0 };
+        sourceMap[source].activeUsers += activeUsers;
+      }
+
+      // City data
+      const country = dims[4]?.value || '';
+      const countryId = dims[5]?.value || '';
+      const city = dims[6]?.value || '';
+      if (city && countryId) {
+        const cityKey = `${countryId}:${city}`;
+        if (!cityMap[cityKey]) cityMap[cityKey] = { country, countryId, activeUsers: 0 };
+        cityMap[cityKey].activeUsers += activeUsers;
+      }
+    });
+
+    const [totalResp] = await client.runRealtimeReport({
+      property: `properties/${normalizePropertyId(propertyId)}`,
+      metrics: [{ name: 'activeUsers' }]
+    });
+    const totalActiveUsers = toNumber(totalResp.rows?.[0]?.metricValues?.[0]?.value);
+
+    if (totalActiveUsers === 0 && (resp.rows || []).length === 0) {
+      throw new Error('Empty realtime data');
+    }
+
+    return {
+      activeUsers: totalActiveUsers,
+      byPage: Object.entries(pageMap).map(([path, data]) => ({
+        path,
+        title: data.title,
+        activeUsers: data.activeUsers,
+        views: data.views
+      })).sort((a, b) => b.activeUsers - a.activeUsers),
+      bySource: Object.entries(sourceMap).map(([source, data]) => ({
+        source,
+        medium: data.medium,
+        activeUsers: data.activeUsers
+      })).sort((a, b) => b.activeUsers - a.activeUsers),
+      byCity: Object.entries(cityMap).map(([key, data]) => ({
+        city: key.split(':')[1],
+        country: data.country,
+        countryId: data.countryId,
+        activeUsers: data.activeUsers
+      })).sort((a, b) => b.activeUsers - a.activeUsers),
+      isFallback: false
+    };
+  } catch (error) {
+    console.warn('Realtime API failed or returned empty, falling back to today data', error);
+
+    // Fallback: Fetch today's data using runReport
+    const [fallbackResp] = await client.runReport({
+      property: `properties/${normalizePropertyId(propertyId)}`,
+      dateRanges: [{ startDate: 'today', endDate: 'today' }],
+      dimensions: [
+        { name: 'pageTitle' },
+        { name: 'pagePath' },
+        { name: 'sessionSource' },
+        { name: 'sessionMedium' },
+        { name: 'country' },
+        { name: 'countryId' },
+        { name: 'city' }
+      ],
+      metrics: [
+        { name: 'activeUsers' },
+        { name: 'screenPageViews' }
+      ],
+      limit: 500
+    });
+
+    const pageMap: Record<string, { title: string; activeUsers: number; views: number }> = {};
+    const sourceMap: Record<string, { medium: string; activeUsers: number }> = {};
+    const cityMap: Record<string, { country: string; countryId: string; activeUsers: number }> = {};
+    let totalActiveUsers = 0;
+
+    (fallbackResp.rows || []).forEach(row => {
+      const dims = row.dimensionValues || [];
+      const metrics = row.metricValues || [];
+      const activeUsers = toNumber(metrics[0]?.value);
+      const views = toNumber(metrics[1]?.value);
+      totalActiveUsers += activeUsers;
+
+      const title = dims[0]?.value || '';
+      const path = dims[1]?.value || '';
+      if (path && !pageMap[path]) pageMap[path] = { title, activeUsers, views };
+
+      const source = dims[2]?.value || '(direct)';
+      const medium = dims[3]?.value || '(none)';
+      if (source && !sourceMap[source]) sourceMap[source] = { medium, activeUsers };
+
+      const country = dims[4]?.value || '';
+      const countryId = dims[5]?.value || '';
+      const city = dims[6]?.value || '';
+      if (city && countryId) {
+        const key = `${countryId}:${city}`;
+        if (!cityMap[key]) cityMap[key] = { country, countryId, activeUsers };
+      }
+    });
+
+    return {
+      activeUsers: totalActiveUsers,
+      byPage: Object.entries(pageMap).map(([path, data]) => ({
+        path,
+        title: data.title,
+        activeUsers: data.activeUsers,
+        views: data.views
+      })).sort((a, b) => b.activeUsers - a.activeUsers),
+      bySource: Object.entries(sourceMap).map(([source, data]) => ({
+        source,
+        medium: data.medium,
+        activeUsers: data.activeUsers
+      })).sort((a, b) => b.activeUsers - a.activeUsers),
+      byCity: Object.entries(cityMap).map(([key, data]) => ({
+        city: key.split(':')[1],
+        country: data.country,
+        countryId: data.countryId,
+        activeUsers: data.activeUsers
+      })).sort((a, b) => b.activeUsers - a.activeUsers),
+      isFallback: true
+    };
+  }
+}
+
+export async function fetchTrendRadarData(propertyId: string, clientOverride?: BetaAnalyticsDataClient) {
+  const client = clientOverride ?? newClient();
+  const normalizedPropertyId = normalizePropertyId(propertyId);
+
+  try {
+    const [hourlyResp] = await client.runReport({
+      property: `properties/${normalizedPropertyId}`,
+      dateRanges: [{ startDate: '2daysAgo', endDate: 'today' }],
+      dimensions: [{ name: 'dateHour' }],
+      metrics: [{ name: 'screenPageViews' }],
+    });
+
+    let sortedHours = (hourlyResp.rows || [])
+      .map(r => ({
+        dateHour: r.dimensionValues?.[0]?.value || '',
+        views: toNumber(r.metricValues?.[0]?.value)
+      }))
+      .sort((a, b) => b.dateHour.localeCompare(a.dateHour))
+      .slice(0, 24)
+      .reverse();
+
+    const heatmap = sortedHours.map(sh => {
+      const hh = sh.dateHour.slice(-2);
+      return {
+        hour: hh,
+        score: sh.views
+      };
+    });
+
+    const [pagesResp] = await client.runReport({
+      property: `properties/${normalizedPropertyId}`,
+      dateRanges: [{ startDate: '1daysAgo', endDate: 'today' }],
+      dimensions: [{ name: 'pageTitle' }, { name: 'hostName' }, { name: 'pagePath' }],
+      metrics: [{ name: 'screenPageViews' }],
+      orderBys: [{ desc: true, metric: { metricName: 'screenPageViews' } }],
+      limit: 15
+    });
+
+    const keywords = (pagesResp.rows || [])
+      .map(r => {
+        let title = r.dimensionValues?.[0]?.value || '';
+        const hostName = r.dimensionValues?.[1]?.value || '';
+        const pagePath = r.dimensionValues?.[2]?.value || '';
+        
+        const url = hostName && pagePath ? `https://${hostName}${pagePath}` : null;
+
+        if (title.includes(' - ')) title = title.split(' - ')[0];
+        if (title.includes(' | ')) title = title.split(' | ')[0];
+        return {
+          topicKeyword: title.trim(),
+          momentumScore: toNumber(r.metricValues?.[0]?.value),
+          url
+        };
+      })
+      .filter(k => k.topicKeyword && k.topicKeyword.toLowerCase() !== '(not set)');
+
+    return { heatmap, topKeywords: keywords.slice(0, 10) };
+  } catch (error) {
+    console.warn('fetchTrendRadarData error', error);
+    return { heatmap: [], topKeywords: [] };
+  }
 }
 
 

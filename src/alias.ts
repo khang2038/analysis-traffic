@@ -1,5 +1,8 @@
 export type AliasMap = Record<string, Record<string, string>>; // propertyId -> alias -> employeeId
 
+// groupName -> list of employeeIds (sau khi normalize, ví dụ \"ngoc\", \"trang\")
+export type GroupsMap = Record<string, string[]>;
+
 export function loadAliasMapFromEnv(): AliasMap {
   const raw = process.env.ALIAS_MAP;
   if (!raw) return {};
@@ -38,6 +41,24 @@ export function loadDefaultAliasMapFromEnv(): Record<string, string> {
     const parsed = JSON.parse(raw);
     if (typeof parsed !== 'object' || parsed === null) return {};
     return parsed as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+export function loadGroupsFromEnv(): GroupsMap {
+  const raw = process.env.GROUPS_MAP;
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return {};
+    const result: GroupsMap = {};
+    for (const [groupName, members] of Object.entries(parsed as Record<string, unknown>)) {
+      if (Array.isArray(members)) {
+        result[groupName] = members.map((m) => String(m));
+      }
+    }
+    return result;
   } catch {
     return {};
   }
