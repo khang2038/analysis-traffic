@@ -150,6 +150,39 @@ app.get('/api/leaderboard/all', async (req, res) => {
     const orderMetric = String(req.query.orderMetric || 'screenPageViews');
     const mode = String(req.query.mode || defaultMode);
 
+    // Try to serve from cache first
+    const defaultRanges = [
+      { startDate: 'today', endDate: 'today' },
+      { startDate: 'yesterday', endDate: 'yesterday' },
+      { startDate: '7daysAgo', endDate: 'today' },
+      { startDate: '30daysAgo', endDate: 'today' }
+    ];
+    const isCachedRange = defaultRanges.some(r => r.startDate === startDate && r.endDate === endDate);
+
+    if (orderMetric === 'screenPageViews' && isCachedRange) {
+      const caches = await prisma.leaderboardCache.findMany({
+        where: {
+          propertyId: 'all',
+          mode: mode,
+          startDate: startDate,
+          endDate: endDate,
+          orderMetric: orderMetric
+        },
+        orderBy: { chunkIndex: 'asc' }
+      });
+      if (caches.length > 0) {
+        const resultData = { rows: [] as any[], totalEmployees: 0, metricSorted: orderMetric };
+        for (const c of caches) {
+          const d = c.data as any;
+          if (d && d.rows) {
+            resultData.rows = resultData.rows.concat(d.rows);
+          }
+          if (d && d.totalEmployees) resultData.totalEmployees = d.totalEmployees;
+        }
+        return res.json(resultData);
+      }
+    }
+
     // Build GA client: service account (default) or OAuth if available
     const client = buildAnalyticsClientFromSession(req.session as any);
 
@@ -177,8 +210,8 @@ app.get('/api/leaderboard/all', async (req, res) => {
       totalRevenue: number;
     }> = {};
 
-    // Lấy dữ liệu từ tất cả sites song song để tránh timeout
-    await Promise.all(sites.map(async (site) => {
+    // Lấy dữ liệu từ tất cả sites tuần tự để tránh OOM do giới hạn Memory của Node
+    for (const site of sites) {
       try {
         const data = mode === 'alias'
           ? await fetchLeaderboardByAlias({
@@ -231,7 +264,7 @@ app.get('/api/leaderboard/all', async (req, res) => {
         console.error(`Error fetching leaderboard for site ${site.id}:`, err);
         // Continue with other sites
       }
-    }));
+    }
 
     // Convert to rows array
     const rows = Object.entries(employeeMap).map(([employeeId, data]) => ({
@@ -273,6 +306,40 @@ app.get('/api/leaderboard', async (req, res) => {
     const mode = String(req.query.mode || defaultMode);
 
     if (!propertyId) return res.status(400).json({ error: 'Missing propertyId' });
+
+    // Try to serve from cache first
+    const defaultRanges = [
+      { startDate: 'today', endDate: 'today' },
+      { startDate: 'yesterday', endDate: 'yesterday' },
+      { startDate: '7daysAgo', endDate: 'today' },
+      { startDate: '30daysAgo', endDate: 'today' }
+    ];
+    const isCachedRange = defaultRanges.some(r => r.startDate === startDate && r.endDate === endDate);
+
+    if (orderMetric === 'screenPageViews' && isCachedRange) {
+      const caches = await prisma.leaderboardCache.findMany({
+        where: {
+          propertyId: propertyId,
+          mode: mode,
+          startDate: startDate,
+          endDate: endDate,
+          orderMetric: orderMetric
+        },
+        orderBy: { chunkIndex: 'asc' }
+      });
+      if (caches.length > 0) {
+        const resultData = { rows: [] as any[], totalEmployees: 0, metricSorted: orderMetric };
+        for (const c of caches) {
+          const d = c.data as any;
+          if (d && d.rows) {
+            resultData.rows = resultData.rows.concat(d.rows);
+          }
+          if (d && d.totalEmployees) resultData.totalEmployees = d.totalEmployees;
+        }
+        return res.json(resultData);
+      }
+    }
+
     // Build GA client: service account (default) or OAuth if available
     const client = buildAnalyticsClientFromSession(req.session as any);
     const data = mode === 'alias'

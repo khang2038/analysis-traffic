@@ -140,3 +140,18 @@ model TrendAlert {
   @@index([propertyId, createdAt])
   @@index([acknowledged])
 }
+
+model LeaderboardCache {
+  id          String   @id @default(uuid())
+  propertyId  String   @default("all") // "all" cho leaderboard/all hoặc propertyId cụ thể
+  mode        String   // "alias" hoặc "employee"
+  startDate   String
+  endDate     String
+  orderMetric String   @default("screenPageViews")
+  chunkIndex  Int      @default(0)
+  data        Json     // Lưu mảng rows và totalEmployees theo chunk
+  lastUpdated DateTime @default(now())
+
+  @@unique([propertyId, mode, startDate, endDate, orderMetric, chunkIndex], name: "cacheId")
+  @@index([propertyId, mode])
+}

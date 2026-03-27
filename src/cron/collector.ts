@@ -2,8 +2,9 @@ import cron from 'node-cron';
 import { DataCollectorService } from '../services/dataCollector';
 import { TrendDetectionService } from '../services/trendDetection';
 import { AIRecommendationService } from '../services/aiRecommendation';
-import { parseSitesEnv } from '../ga';
-
+import { parseSitesEnv, fetchLeaderboard, fetchLeaderboardByAlias } from '../ga';
+import { loadAliasMapFromEnv } from '../alias';
+import prisma from '../db/client';
 /**
  * Cron Jobs cho Data Collection và AI Analysis
  */
@@ -152,6 +153,147 @@ export class CronJobs {
   }
 
   /**
+   * Cập nhật cache Leaderboard mỗi 15 phút
+   */
+  startLeaderboardCache(): void {
+    const runUpdate = async () => {
+      // eslint-disable-next-line no-console
+      console.log('[Cron] Updating leaderboard cache...');
+      try {
+        const sites = parseSitesEnv(process.env.GA4_SITES);
+        const aliasMap = loadAliasMapFromEnv();
+        const employeeDimension = process.env.GA4_EMPLOYEE_DIMENSION || 'customUser:employee_id';
+        const modes = ['alias', 'employee'];
+        const dateRanges = [
+          { startDate: 'today', endDate: 'today' },
+          { startDate: 'yesterday', endDate: 'yesterday' },
+          { startDate: '7daysAgo', endDate: 'today' },
+          { startDate: '30daysAgo', endDate: 'today' }
+        ];
+
+        for (const mode of modes) {
+          for (const range of dateRanges) {
+            const allEmployeeMap: Record<string, any> = {};
+
+            for (const site of sites) {
+              try {
+                const data = mode === 'alias'
+                  ? await fetchLeaderboardByAlias({
+                      propertyId: site.id,
+                      startDate: range.startDate,
+                      endDate: range.endDate,
+                      orderMetric: 'screenPageViews',
+                      aliasToEmployee: aliasMap[site.id]
+                    })
+                  : await fetchLeaderboard({
+                      propertyId: site.id,
+                      employeeDimension,
+                      startDate: range.startDate,
+                      endDate: range.endDate,
+                      orderMetric: 'screenPageViews'
+                    });
+
+                await prisma.leaderboardCache.deleteMany({
+                  where: { propertyId: site.id, mode, startDate: range.startDate, endDate: range.endDate, orderMetric: 'screenPageViews' }
+                });
+
+                const CHUNK_SIZE = 1000;
+                const rowsCount = data.rows?.length || 0;
+                
+                if (rowsCount === 0) {
+                  await prisma.leaderboardCache.create({
+                    data: { propertyId: site.id, mode, startDate: range.startDate, endDate: range.endDate, orderMetric: 'screenPageViews', chunkIndex: 0, data: { rows: [], totalEmployees: 0, metricSorted: 'screenPageViews' } as any }
+                  });
+                } else {
+                  for (let i = 0; i < rowsCount; i += CHUNK_SIZE) {
+                    const chunkRows = data.rows.slice(i, i + CHUNK_SIZE);
+                    await prisma.leaderboardCache.create({
+                      data: {
+                        propertyId: site.id, mode, startDate: range.startDate, endDate: range.endDate, orderMetric: 'screenPageViews', chunkIndex: Math.floor(i / CHUNK_SIZE),
+                        data: { rows: chunkRows, totalEmployees: data.totalEmployees, metricSorted: data.metricSorted } as any
+                      }
+                    });
+                  }
+                }
+
+                for (const row of data.rows || []) {
+                  let empId = row.employeeId;
+                  if (mode === 'alias' && aliasMap[site.id]?.[empId]) {
+                    empId = aliasMap[site.id][empId];
+                  }
+                  if (!allEmployeeMap[empId]) {
+                    allEmployeeMap[empId] = { activeUsers: 0, sessions: 0, screenPageViews: 0, totalEngagementTime: 0, eventCount: 0, conversions: 0, totalRevenue: 0 };
+                  }
+                  allEmployeeMap[empId].activeUsers += row.activeUsers;
+                  allEmployeeMap[empId].sessions += row.sessions;
+                  allEmployeeMap[empId].screenPageViews += row.screenPageViews;
+                  allEmployeeMap[empId].totalEngagementTime += (row.averageEngagementTime || 0) * row.activeUsers;
+                  allEmployeeMap[empId].eventCount += row.eventCount || 0;
+                  allEmployeeMap[empId].conversions += row.conversions || 0;
+                  allEmployeeMap[empId].totalRevenue += row.totalRevenue || 0;
+                }
+              } catch (siteErr: any) {
+                // eslint-disable-next-line no-console
+                console.error(`[Cron] Error fetching leaderboard for site ${site.id}:`, siteErr.message);
+              }
+            }
+
+            const allRows = Object.entries(allEmployeeMap).map(([employeeId, v]) => ({
+              employeeId,
+              activeUsers: v.activeUsers,
+              sessions: v.sessions,
+              screenPageViews: v.screenPageViews,
+              viewsPerActiveUser: v.activeUsers > 0 ? v.screenPageViews / v.activeUsers : 0,
+              averageEngagementTime: v.activeUsers > 0 ? v.totalEngagementTime / v.activeUsers : 0,
+              eventCount: v.eventCount,
+              conversions: v.conversions,
+              totalRevenue: v.totalRevenue,
+              rank: 0
+            }))
+            .sort((a, b) => b.screenPageViews - a.screenPageViews)
+            .map((row, idx) => ({ ...row, rank: idx + 1 }));
+
+            await prisma.leaderboardCache.deleteMany({
+              where: { propertyId: 'all', mode, startDate: range.startDate, endDate: range.endDate, orderMetric: 'screenPageViews' }
+            });
+
+            const ALL_CHUNK_SIZE = 1000;
+            if (allRows.length === 0) {
+              await prisma.leaderboardCache.create({
+                data: { propertyId: 'all', mode, startDate: range.startDate, endDate: range.endDate, orderMetric: 'screenPageViews', chunkIndex: 0, data: { rows: [], totalEmployees: 0, metricSorted: 'screenPageViews' } as any }
+              });
+            } else {
+              for (let i = 0; i < allRows.length; i += ALL_CHUNK_SIZE) {
+                const chunkRows = allRows.slice(i, i + ALL_CHUNK_SIZE);
+                await prisma.leaderboardCache.create({
+                  data: {
+                    propertyId: 'all', mode, startDate: range.startDate, endDate: range.endDate, orderMetric: 'screenPageViews', chunkIndex: Math.floor(i / ALL_CHUNK_SIZE),
+                    data: { rows: chunkRows, totalEmployees: allRows.length, metricSorted: 'screenPageViews' } as any
+                  }
+                });
+              }
+            }
+          }
+        }
+        // eslint-disable-next-line no-console
+        console.log('[Cron] Leaderboard cache update completed');
+      } catch (error: any) {
+        // eslint-disable-next-line no-console
+        console.error('[Cron] Error updating leaderboard cache:', error.message);
+      }
+    };
+
+    // Chạy luôn lập tức ở lần đầu tiên khởi động
+    runUpdate().catch(err => console.error(err));
+
+    cron.schedule('*/30 * * * *', runUpdate);
+
+    // eslint-disable-next-line no-console
+    console.log('[Cron] Leaderboard cache update scheduled (every 30 mins)');
+  }
+
+
+  /**
    * Start tất cả cron jobs
    */
   startAll(): void {
@@ -159,6 +301,7 @@ export class CronJobs {
     this.startWeeklyTrendAnalysis();
     this.startDailyAIRecommendations();
     this.startHourlySpikeDetection();
+    this.startLeaderboardCache();
     // eslint-disable-next-line no-console
     console.log('[Cron] All cron jobs started');
   }

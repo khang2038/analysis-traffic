@@ -443,6 +443,7 @@ function App() {
 
       setAllSitesLeaderboard(sorted)
     } catch (e: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
+      if (e.name === 'AbortError') return;
       setError(e.message)
     } finally {
       setLoadingAllSitesLeaderboard(false)
@@ -488,6 +489,7 @@ function App() {
 
       setLeaderboard(sorted)
     } catch (e: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
+      if (e.name === 'AbortError') return;
       setError(e.message)
     } finally {
       setLoadingLeaderboard(false)
@@ -506,6 +508,7 @@ function App() {
       if (data.error) { setError(data.error); setReport(null); return }
       setReport(data)
     } catch (e: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
+      if (e.name === 'AbortError') return;
       setError(e.message)
     } finally {
       setLoadingReport(false)
@@ -590,6 +593,7 @@ function App() {
       
       setPrevStats({ activeUsers: prevUsers, screenPageViews: prevViews })
     } catch (e: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
+      if (e.name === 'AbortError') return;
       console.error("Failed to load prev stats:", e)
     } finally {
       setLoadingPrevStats(false)
@@ -939,10 +943,10 @@ function App() {
                    {loadingLeaderboard ? (
                      <div className="py-20 text-center"><div className="spinner"></div></div>
                    ) : (
-                     <div className="data-table-container">
+                     <div className="data-table-container" style={{ maxHeight: '400px', overflowY: 'auto' }}>
                         <table className="data-table">
                           <tbody>
-                            {leaderboard.slice(0, 10).map((row, i) => (
+                            {leaderboard.map((row, i) => (
                               <tr key={i} onClick={() => loadReportForEmployee(row.employeeId)} className="cursor-pointer">
                                 <td>{getEmployeeName(row.employeeId)}</td>
                                 <td className="text-right font-bold text-indigo-400">{row.screenPageViews.toLocaleString()}</td>

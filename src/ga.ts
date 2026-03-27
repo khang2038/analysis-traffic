@@ -1,5 +1,6 @@
 import { BetaAnalyticsDataClient } from '@google-analytics/data';
 import { extractAliasFromPath } from './alias';
+import { chunkDateRange } from './dateUtils';
 
 export type RealtimeReport = {
   activeUsers: number;
@@ -149,47 +150,45 @@ export async function fetchEmployeeReport(params: EmployeeReportParams, clientOv
   const client = clientOverride ?? newClient();
 
   const { propertyId, employeeDimension, employeeId, startDate, endDate } = params;
+  const dateChunks = chunkDateRange(startDate, endDate, 10);
 
   // 1) Totals + table by page path + screen class for this employee
-  // Pagination: fetch all rows
   const MAX_LIMIT = 100000;
-  let offset = 0;
-  let totalRowCount = 0;
   let allRows: any[] = [];
-  let fetchedCount = 0;
 
-  do {
-    const [detailResponse] = await client.runReport({
-      property: `properties/${normalizePropertyId(propertyId)}`,
-      dateRanges: [{ startDate, endDate }],
-      dimensions: [
-        { name: 'pagePathPlusQueryString' },
-        { name: 'unifiedScreenClass' }
-      ],
-      metrics: [
-        { name: 'activeUsers' },
-        { name: 'sessions' },
-        { name: 'screenPageViews' },
-        { name: 'userEngagementDuration' }
-      ],
-      dimensionFilter: {
-        filter: {
-          fieldName: employeeDimension,
-          stringFilter: { matchType: 'EXACT', value: employeeId }
-        }
-      },
-      limit: MAX_LIMIT,
-      offset: offset
-    });
+  for (const chunk of dateChunks) {
+    let offset = 0;
+    let fetchedCount = 0;
+    do {
+      const [detailResponse] = await client.runReport({
+        property: `properties/${normalizePropertyId(propertyId)}`,
+        dateRanges: [{ startDate: chunk.startDate, endDate: chunk.endDate }],
+        dimensions: [
+          { name: 'pagePathPlusQueryString' },
+          { name: 'unifiedScreenClass' }
+        ],
+        metrics: [
+          { name: 'activeUsers' },
+          { name: 'sessions' },
+          { name: 'screenPageViews' },
+          { name: 'userEngagementDuration' }
+        ],
+        dimensionFilter: {
+          filter: {
+            fieldName: employeeDimension,
+            stringFilter: { matchType: 'EXACT', value: employeeId }
+          }
+        },
+        limit: MAX_LIMIT,
+        offset: offset
+      });
 
-    const rows = detailResponse.rows ?? [];
-    fetchedCount = rows.length;
-    allRows = allRows.concat(rows);
-    totalRowCount = detailResponse.rowCount ? Number(detailResponse.rowCount) : Math.max(totalRowCount, allRows.length);
-
-    offset += MAX_LIMIT;
-    // Continue if we got a full batch (means there might be more rows)
-  } while (fetchedCount === MAX_LIMIT);
+      const rowsChunk = detailResponse.rows ?? [];
+      fetchedCount = rowsChunk.length;
+      allRows = allRows.concat(rowsChunk);
+      offset += MAX_LIMIT;
+    } while (fetchedCount === MAX_LIMIT);
+  }
 
   const rows = allRows;
   // Aggregate by pagePath (không có screenClass)
@@ -248,56 +247,66 @@ export async function fetchEmployeeReport(params: EmployeeReportParams, clientOv
 
   // 2) Rank among all employees by screenPageViews (change metric as needed)
   const metricForRank: 'activeUsers' | 'sessions' | 'screenPageViews' = 'screenPageViews';
-  // Pagination: fetch all rows for ranking
-  offset = 0;
-  totalRowCount = 0;
   let allRankRows: any[] = [];
-  fetchedCount = 0;
 
-  do {
-    const [rankResponse] = await client.runReport({
-      property: `properties/${normalizePropertyId(propertyId)}`,
-      dateRanges: [{ startDate, endDate }],
-      dimensions: [{ name: employeeDimension }],
-      metrics: [{ name: metricForRank }],
-      orderBys: [{ desc: true, metric: { metricName: metricForRank } }],
-      limit: MAX_LIMIT,
-      offset: offset
-    });
+  for (const chunk of dateChunks) {
+    let offset = 0;
+    let fetchedCount = 0;
+    do {
+      const [rankResponse] = await client.runReport({
+        property: `properties/${normalizePropertyId(propertyId)}`,
+        dateRanges: [{ startDate: chunk.startDate, endDate: chunk.endDate }],
+        dimensions: [{ name: employeeDimension }],
+        metrics: [{ name: metricForRank }],
+        // We do not sort here because we'll aggregate and sort locally
+        limit: MAX_LIMIT,
+        offset: offset
+      });
 
-    const rankRows = rankResponse.rows ?? [];
-    fetchedCount = rankRows.length;
-    allRankRows = allRankRows.concat(rankRows);
-    totalRowCount = rankResponse.rowCount ? Number(rankResponse.rowCount) : Math.max(totalRowCount, allRankRows.length);
+      const rankRowsChunk = rankResponse.rows ?? [];
+      fetchedCount = rankRowsChunk.length;
+      allRankRows = allRankRows.concat(rankRowsChunk);
+      offset += MAX_LIMIT;
+    } while (fetchedCount === MAX_LIMIT);
+  }
 
-    offset += MAX_LIMIT;
-    // Continue if we got a full batch (means there might be more rows)
-  } while (fetchedCount === MAX_LIMIT);
-
-  // Get site totals (toàn bộ site, không filter)
-  const [siteTotalsResponse] = await client.runReport({
-    property: `properties/${normalizePropertyId(propertyId)}`,
-    dateRanges: [{ startDate, endDate }],
-    dimensions: [],
-    metrics: [
-      { name: 'activeUsers' },
-      { name: 'screenPageViews' }
-    ],
-    limit: 1
-  });
-
-  const siteTotalsRow = siteTotalsResponse.rows?.[0];
-  const siteTotalActiveUsers = toNumber(siteTotalsRow?.metricValues?.[0]?.value);
-  const siteTotalScreenPageViews = toNumber(siteTotalsRow?.metricValues?.[1]?.value);
-
-  const rankRows = allRankRows;
+  // Aggregate rank data globally
+  const rankMap: Record<string, number> = {};
+  for (const r of allRankRows) {
+    const dimVal = r.dimensionValues?.[0]?.value ?? '';
+    const val = toNumber(r.metricValues?.[0]?.value);
+    if (!rankMap[dimVal]) rankMap[dimVal] = 0;
+    rankMap[dimVal] += val;
+  }
+  
+  const sortedRanks = Object.entries(rankMap).sort((a, b) => b[1] - a[1]);
   let position = -1;
-  for (let i = 0; i < rankRows.length; i++) {
-    const dimVal = rankRows[i]?.dimensionValues?.[0]?.value ?? '';
-    if (dimVal === employeeId) {
+  for (let i = 0; i < sortedRanks.length; i++) {
+    if (sortedRanks[i][0] === employeeId) {
       position = i + 1; // 1-based
       break;
     }
+  }
+
+  // Get site totals (toàn bộ site, không filter)
+  let siteTotalActiveUsers = 0;
+  let siteTotalScreenPageViews = 0;
+
+  for (const chunk of dateChunks) {
+    const [siteTotalsResponse] = await client.runReport({
+      property: `properties/${normalizePropertyId(propertyId)}`,
+      dateRanges: [{ startDate: chunk.startDate, endDate: chunk.endDate }],
+      dimensions: [],
+      metrics: [
+        { name: 'activeUsers' },
+        { name: 'screenPageViews' }
+      ],
+      limit: 1
+    });
+
+    const siteTotalsRow = siteTotalsResponse.rows?.[0];
+    siteTotalActiveUsers += toNumber(siteTotalsRow?.metricValues?.[0]?.value);
+    siteTotalScreenPageViews += toNumber(siteTotalsRow?.metricValues?.[1]?.value);
   }
 
   return {
@@ -315,7 +324,7 @@ export async function fetchEmployeeReport(params: EmployeeReportParams, clientOv
     byPageAndScreen,
     rank: {
       position,
-      totalEmployees: rankRows.length,
+      totalEmployees: sortedRanks.length,
       metric: metricForRank
     }
   };
@@ -332,71 +341,83 @@ export async function fetchLeaderboard(params: {
   const client = clientOverride ?? newClient();
   const { propertyId, employeeDimension, startDate, endDate } = params;
   const orderMetric = params.orderMetric ?? 'screenPageViews';
+  const dateChunks = chunkDateRange(startDate, endDate, 10);
 
-  // Pagination: fetch all rows
   const MAX_LIMIT = 100000;
-  let offset = 0;
-  let totalRowCount = 0;
-  let allRows: any[] = [];
-  let fetchedCount = 0;
+  const map: Record<string, LeaderboardRow & { engagementTime: number }> = {};
 
-  do {
-    const [resp] = await client.runReport({
-      property: `properties/${normalizePropertyId(propertyId)}`,
-      dateRanges: [{ startDate, endDate }],
-      dimensions: [{ name: employeeDimension }],
-      metrics: [
-        { name: 'activeUsers' },
-        { name: 'sessions' },
-        { name: 'screenPageViews' },
-        { name: 'userEngagementDuration' },
-        { name: 'eventCount' },
-        { name: 'conversions' },
-        { name: 'totalRevenue' }
-      ],
-      orderBys: [{ desc: true, metric: { metricName: orderMetric } }],
-      limit: MAX_LIMIT,
-      offset: offset
-    });
+  for (const chunk of dateChunks) {
+    let offset = 0;
+    let fetchedCount = 0;
+    
+    do {
+      const [resp] = await client.runReport({
+        property: `properties/${normalizePropertyId(propertyId)}`,
+        dateRanges: [{ startDate: chunk.startDate, endDate: chunk.endDate }],
+        dimensions: [{ name: employeeDimension }],
+        metrics: [
+          { name: 'activeUsers' },
+          { name: 'sessions' },
+          { name: 'screenPageViews' },
+          { name: 'userEngagementDuration' },
+          { name: 'eventCount' },
+          { name: 'conversions' },
+          { name: 'totalRevenue' }
+        ],
+        // Do not use orderBys here because we sort locally after aggregation
+        limit: MAX_LIMIT,
+        offset: offset
+      });
 
-    const rows = resp.rows ?? [];
-    fetchedCount = rows.length;
-    allRows = allRows.concat(rows);
-    totalRowCount = resp.rowCount ? Number(resp.rowCount) : Math.max(totalRowCount, allRows.length);
+      const rows = resp.rows ?? [];
+      fetchedCount = rows.length;
 
-    offset += MAX_LIMIT;
-    // Continue if we got a full batch (means there might be more rows)
-  } while (fetchedCount === MAX_LIMIT);
+      for (const r of rows) {
+        const d = r.dimensionValues ?? [];
+        const m = r.metricValues ?? [];
+        const employeeId = d[0]?.value ?? '';
+        
+        if (!map[employeeId]) {
+          map[employeeId] = {
+            employeeId,
+            activeUsers: 0,
+            sessions: 0,
+            screenPageViews: 0,
+            viewsPerActiveUser: 0,
+            averageEngagementTime: 0,
+            engagementTime: 0,
+            eventCount: 0,
+            conversions: 0,
+            totalRevenue: 0,
+            rank: 0
+          };
+        }
+        
+        map[employeeId].activeUsers += toNumber(m[0]?.value);
+        map[employeeId].sessions += toNumber(m[1]?.value);
+        map[employeeId].screenPageViews += toNumber(m[2]?.value);
+        map[employeeId].engagementTime += toNumber(m[3]?.value);
+        map[employeeId].eventCount += toNumber(m[4]?.value);
+        map[employeeId].conversions += toNumber(m[5]?.value);
+        map[employeeId].totalRevenue += toNumber(m[6]?.value);
+      }
 
-  const rows = allRows;
-  const leaderboardRows: LeaderboardRow[] = rows.map((r, idx) => {
-    const d = r.dimensionValues ?? [];
-    const m = r.metricValues ?? [];
-    const activeUsers = toNumber(m[0]?.value);
-    const sessions = toNumber(m[1]?.value);
-    const screenPageViews = toNumber(m[2]?.value);
-    const engagementTime = toNumber(m[3]?.value); // total engagement time in seconds
-    const eventCount = toNumber(m[4]?.value);
-    const conversions = toNumber(m[5]?.value);
-    const totalRevenue = toNumber(m[6]?.value);
+      offset += MAX_LIMIT;
+    } while (fetchedCount === MAX_LIMIT);
+  }
 
-    return {
-      employeeId: d[0]?.value ?? '',
-      activeUsers,
-      sessions,
-      screenPageViews,
-      viewsPerActiveUser: activeUsers > 0 ? screenPageViews / activeUsers : 0,
-      averageEngagementTime: activeUsers > 0 ? engagementTime / activeUsers : 0, // Average engagement time per active user
-      eventCount,
-      conversions,
-      totalRevenue,
-      rank: idx + 1
-    };
+  const leaderboardRows: LeaderboardRow[] = Object.values(map).map(row => {
+    row.viewsPerActiveUser = row.activeUsers > 0 ? row.screenPageViews / row.activeUsers : 0;
+    row.averageEngagementTime = row.activeUsers > 0 ? row.engagementTime / row.activeUsers : 0;
+    return row;
   });
+
+  leaderboardRows.sort((a, b) => b[orderMetric] - a[orderMetric]);
+  leaderboardRows.forEach((row, idx) => { row.rank = idx + 1; });
 
   return {
     rows: leaderboardRows,
-    totalEmployees: totalRowCount > 0 ? totalRowCount : rows.length,
+    totalEmployees: leaderboardRows.length,
     metricSorted: orderMetric
   };
 }
@@ -436,6 +457,7 @@ export async function fetchLeaderboardByAlias(params: {
   // Một số property (TodayOnUs, newsandfriends) dùng pageTitle + screenClass, còn lại dùng pagePath
   const useTitleAndScreen = useTitleAndScreenForProperty(normalizedPropertyId);
   const allowedAliases = params.aliasToEmployee ? new Set(Object.keys(params.aliasToEmployee)) : new Set<string>();
+  const dateChunks = chunkDateRange(startDate, endDate, 10);
 
   const map: Record<string, {
     activeUsers: number;
@@ -451,93 +473,89 @@ export async function fetchLeaderboardByAlias(params: {
 
   // Pagination: fetch all rows
   const MAX_LIMIT = 100000;
-  let offset = 0;
-  let totalRowCount = 0;
-  let allRows: any[] = [];
-  let fetchedCount = 0;
 
-  do {
-    const [resp] = await client.runReport({
-      property: `properties/${normalizedPropertyId}`,
-      dateRanges: [{ startDate, endDate }],
-      dimensions: useTitleAndScreen
-        ? [{ name: 'pageTitle' }, { name: 'unifiedScreenClass' }]
-        : [{ name: 'pagePathPlusQueryString' }],
-      metrics: [
-        { name: 'activeUsers' },
-        { name: 'sessions' },
-        { name: 'screenPageViews' },
-        { name: 'userEngagementDuration' },
-        { name: 'eventCount' },
-        { name: 'conversions' },
-        { name: 'totalRevenue' }
-      ],
-      orderBys: [{ desc: true, metric: { metricName: 'screenPageViews' } }],
-      limit: MAX_LIMIT,
-      offset: offset
-    });
+  for (const chunk of dateChunks) {
+    let offset = 0;
+    let fetchedCount = 0;
 
-    const rows = resp.rows ?? [];
-    fetchedCount = rows.length;
-    allRows = allRows.concat(rows);
-    totalRowCount = resp.rowCount ? Number(resp.rowCount) : Math.max(totalRowCount, allRows.length);
+    do {
+      const [resp] = await client.runReport({
+        property: `properties/${normalizedPropertyId}`,
+        dateRanges: [{ startDate: chunk.startDate, endDate: chunk.endDate }],
+        dimensions: useTitleAndScreen
+          ? [{ name: 'pageTitle' }, { name: 'unifiedScreenClass' }]
+          : [{ name: 'pagePathPlusQueryString' }],
+        metrics: [
+          { name: 'activeUsers' },
+          { name: 'sessions' },
+          { name: 'screenPageViews' },
+          { name: 'userEngagementDuration' },
+          { name: 'eventCount' },
+          { name: 'conversions' },
+          { name: 'totalRevenue' }
+        ],
+        // No orderBys since we aggregate server-side
+        limit: MAX_LIMIT,
+        offset: offset
+      });
 
-    offset += MAX_LIMIT;
-    // Continue if we got a full batch (means there might be more rows)
-  } while (fetchedCount === MAX_LIMIT);
+      const rows = resp.rows ?? [];
+      fetchedCount = rows.length;
 
-  for (const r of allRows) {
-    const d = r.dimensionValues ?? [];
-    const m = r.metricValues ?? [];
+      for (const r of rows) {
+        const d = r.dimensionValues ?? [];
+        const m = r.metricValues ?? [];
 
-    let alias = '';
-    let pageKey = '';
-    if (useTitleAndScreen) {
-      // Property dùng title+screen: extract từ pageTitle + screenClass
-      const pageTitle = d[0]?.value ?? '';
-      const screenClass = d[1]?.value ?? '';
-      pageKey = pageTitle;
-      alias = extractAliasFromTitle(pageTitle, screenClass, allowedAliases);
-      if (!alias) {
-        continue;
+        let alias = '';
+        if (useTitleAndScreen) {
+          // Property dùng title+screen: extract từ pageTitle + screenClass
+          const pageTitle = d[0]?.value ?? '';
+          const screenClass = d[1]?.value ?? '';
+          alias = extractAliasFromTitle(pageTitle, screenClass, allowedAliases);
+          if (!alias) {
+            continue;
+          }
+        } else {
+          // Các property khác: extract từ pagePath
+          const pagePath = d[0]?.value ?? '';
+          alias = extractAliasFromPath(pagePath);
+          if (!alias) {
+            continue;
+          }
+
+          // Nếu có aliasToEmployee, chỉ aggregate các alias có trong map
+          if (shouldFilterAliases && !allowedAliases.has(alias)) {
+            continue;
+          }
+        }
+
+        const employeeId = params.aliasToEmployee?.[alias] ?? alias;
+        const screenPV = toNumber(m[2]?.value);
+        const activeUsers = toNumber(m[0]?.value);
+
+        if (!map[employeeId]) {
+          map[employeeId] = {
+            activeUsers: 0,
+            sessions: 0,
+            screenPageViews: 0,
+            totalEngagementTime: 0,
+            eventCount: 0,
+            conversions: 0,
+            totalRevenue: 0
+          };
+        }
+        map[employeeId].activeUsers += activeUsers;
+        map[employeeId].sessions += toNumber(m[1]?.value);
+        map[employeeId].screenPageViews += screenPV;
+        map[employeeId].totalEngagementTime += toNumber(m[3]?.value);
+        map[employeeId].eventCount += toNumber(m[4]?.value);
+        map[employeeId].conversions += toNumber(m[5]?.value);
+        map[employeeId].totalRevenue += toNumber(m[6]?.value);
       }
-    } else {
-      // Các property khác: extract từ pagePath
-      const pagePath = d[0]?.value ?? '';
-      pageKey = pagePath;
-      alias = extractAliasFromPath(pagePath);
-      if (!alias) {
-        continue;
-      }
 
-      // Nếu có aliasToEmployee, chỉ aggregate các alias có trong map
-      if (shouldFilterAliases && !allowedAliases.has(alias)) {
-        continue;
-      }
-    }
-
-    const employeeId = params.aliasToEmployee?.[alias] ?? alias;
-    const screenPV = toNumber(m[2]?.value);
-    const activeUsers = toNumber(m[0]?.value);
-
-    if (!map[employeeId]) {
-      map[employeeId] = {
-        activeUsers: 0,
-        sessions: 0,
-        screenPageViews: 0,
-        totalEngagementTime: 0,
-        eventCount: 0,
-        conversions: 0,
-        totalRevenue: 0
-      };
-    }
-    map[employeeId].activeUsers += activeUsers;
-    map[employeeId].sessions += toNumber(m[1]?.value);
-    map[employeeId].screenPageViews += screenPV;
-    map[employeeId].totalEngagementTime += toNumber(m[3]?.value);
-    map[employeeId].eventCount += toNumber(m[4]?.value);
-    map[employeeId].conversions += toNumber(m[5]?.value);
-    map[employeeId].totalRevenue += toNumber(m[6]?.value);
+      offset += MAX_LIMIT;
+      // Continue if we got a full batch (means there might be more rows)
+    } while (fetchedCount === MAX_LIMIT);
   }
 
   const rows: LeaderboardRow[] = Object.entries(map)
@@ -576,55 +594,53 @@ export async function fetchEmployeeReportByAlias(params: {
   const { propertyId, alias, startDate, endDate } = params;
   const normalizedPropertyId = normalizePropertyId(propertyId);
   const useTitleAndScreen = useTitleAndScreenForProperty(normalizedPropertyId);
+  const dateChunks = chunkDateRange(startDate, endDate, 10);
 
   // Pagination: fetch all rows
   const MAX_LIMIT = 100000;
-  let offset = 0;
-  let totalRowCount = 0;
   let allRows: any[] = [];
-  let fetchedCount = 0;
 
-  do {
-    const [detailResponse] = await client.runReport({
-      property: `properties/${normalizedPropertyId}`,
-      dateRanges: [{ startDate, endDate }],
-      dimensions: useTitleAndScreen
-        ? [{ name: 'pageTitle' }, { name: 'unifiedScreenClass' }]
-        : [{ name: 'pagePathPlusQueryString' }, { name: 'unifiedScreenClass' }],
-      metrics: [
-        { name: 'activeUsers' },
-        { name: 'sessions' },
-        { name: 'screenPageViews' },
-        { name: 'userEngagementDuration' }
-      ],
-      dimensionFilter: useTitleAndScreen
-        ? {
-          filter: {
-            fieldName: 'pageTitle',
-            stringFilter: { matchType: 'CONTAINS', value: alias }
+  for (const chunk of dateChunks) {
+    let offset = 0;
+    let fetchedCount = 0;
+
+    do {
+      const [detailResponse] = await client.runReport({
+        property: `properties/${normalizedPropertyId}`,
+        dateRanges: [{ startDate: chunk.startDate, endDate: chunk.endDate }],
+        dimensions: useTitleAndScreen
+          ? [{ name: 'pageTitle' }, { name: 'unifiedScreenClass' }]
+          : [{ name: 'pagePathPlusQueryString' }, { name: 'unifiedScreenClass' }],
+        metrics: [
+          { name: 'activeUsers' },
+          { name: 'sessions' },
+          { name: 'screenPageViews' },
+          { name: 'userEngagementDuration' }
+        ],
+        dimensionFilter: useTitleAndScreen
+          ? {
+            filter: {
+              fieldName: 'pageTitle',
+              stringFilter: { matchType: 'CONTAINS', value: alias }
+            }
           }
-        }
-        : {
-          filter: {
-            fieldName: 'pagePathPlusQueryString',
-            stringFilter: { matchType: 'CONTAINS', value: alias }
-          }
-        },
-      limit: MAX_LIMIT,
-      offset: offset
-    });
+          : {
+            filter: {
+              fieldName: 'pagePathPlusQueryString',
+              stringFilter: { matchType: 'CONTAINS', value: alias }
+            }
+          },
+        limit: MAX_LIMIT,
+        offset: offset
+      });
 
-    const rows = detailResponse.rows ?? [];
-    fetchedCount = rows.length;
-    allRows = allRows.concat(rows);
-    totalRowCount = detailResponse.rowCount ? Number(detailResponse.rowCount) : Math.max(totalRowCount, allRows.length);
-
-    // eslint-disable-next-line no-console
-    console.log(`fetchEmployeeReportByAlias: propertyId=${normalizedPropertyId}, alias=${alias}, offset=${offset}, fetched=${fetchedCount}, totalRowCount=${totalRowCount}, accumulated=${allRows.length}`);
-
-    offset += MAX_LIMIT;
-    // Continue if we got a full batch (means there might be more rows)
-  } while (fetchedCount === MAX_LIMIT);
+      const rowsChunk = detailResponse.rows ?? [];
+      fetchedCount = rowsChunk.length;
+      allRows = allRows.concat(rowsChunk);
+      
+      offset += MAX_LIMIT;
+    } while (fetchedCount === MAX_LIMIT);
+  }
 
   const rows = allRows;
   // Aggregate by pagePath hoặc pageTitle tùy theo property
@@ -683,20 +699,25 @@ export async function fetchEmployeeReportByAlias(params: {
     .sort((a, b) => b.screenPageViews - a.screenPageViews);
 
   // Get site totals (toàn bộ site, không filter)
-  const [siteTotalsResponse] = await client.runReport({
-    property: `properties/${normalizePropertyId(propertyId)}`,
-    dateRanges: [{ startDate, endDate }],
-    dimensions: [],
-    metrics: [
-      { name: 'activeUsers' },
-      { name: 'screenPageViews' }
-    ],
-    limit: 1
-  });
+  let siteTotalActiveUsers = 0;
+  let siteTotalScreenPageViews = 0;
+  
+  for (const chunk of dateChunks) {
+    const [siteTotalsResponse] = await client.runReport({
+      property: `properties/${normalizePropertyId(propertyId)}`,
+      dateRanges: [{ startDate: chunk.startDate, endDate: chunk.endDate }],
+      dimensions: [],
+      metrics: [
+        { name: 'activeUsers' },
+        { name: 'screenPageViews' }
+      ],
+      limit: 1
+    });
 
-  const siteTotalsRow = siteTotalsResponse.rows?.[0];
-  const siteTotalActiveUsers = toNumber(siteTotalsRow?.metricValues?.[0]?.value);
-  const siteTotalScreenPageViews = toNumber(siteTotalsRow?.metricValues?.[1]?.value);
+    const siteTotalsRow = siteTotalsResponse.rows?.[0];
+    siteTotalActiveUsers += toNumber(siteTotalsRow?.metricValues?.[0]?.value);
+    siteTotalScreenPageViews += toNumber(siteTotalsRow?.metricValues?.[1]?.value);
+  }
 
   // Rank by alias via aggregated leaderboard
   const leaderboard = await fetchLeaderboardByAlias({
