@@ -26,7 +26,7 @@ import AIAnalysisModal from './components/AIAnalysisModal'
 import TrendRadarView from './components/TrendRadarView'
 import AIContentLab from './components/AIContentLab'
 import AICoachView from './components/AICoachView'
-import RealtimeView from './components/RealtimeView'
+
 import { DateRangePicker } from './components/DateRangePicker'
 import './App.css'
 
@@ -86,7 +86,7 @@ type Report = {
   rank: { position: number; totalEmployees: number; metric: string }
 }
 
-type TabType = 'dashboard' | 'realtime' | 'radar' | 'lab' | 'coach';
+type TabType = 'dashboard' | 'radar' | 'lab' | 'coach';
 
 const api = (path: string, options?: RequestInit) => fetch(path, options)
 
@@ -657,7 +657,7 @@ function App() {
         
         <div className="sidebar-nav">
             <NavItem icon={LayoutDashboard} label={t('common.dashboard')} active={activeTab === 'dashboard'} onClick={() => { setActiveTab('dashboard'); setShowMobileMenu(false); }} />
-            <NavItem icon={Clock} label={t('common.realtime')} active={activeTab === 'realtime'} onClick={() => { setActiveTab('realtime'); setShowMobileMenu(false); }} />
+
             <NavItem 
             icon={TrendingUp} 
             label={t('common.radar')} 
@@ -692,7 +692,7 @@ function App() {
               <Menu size={24} />
             </button>
             <div className="page-title">
-              <h1>{activeTab === 'dashboard' ? t('common.dashboard') : activeTab === 'realtime' ? t('common.realtime') : activeTab === 'radar' ? t('common.radar') : activeTab === 'lab' ? t('common.lab') : t('common.coach')}</h1>
+              <h1>{activeTab === 'dashboard' ? t('common.dashboard') : activeTab === 'radar' ? t('common.radar') : activeTab === 'lab' ? t('common.lab') : t('common.coach')}</h1>
               <p>{t('common.welcome')}</p>
             </div>
           </div>
@@ -964,7 +964,7 @@ function App() {
           );
         })()}
 
-        {activeTab === 'realtime' && <RealtimeView propertyId={siteId} />}
+
         {activeTab === 'radar' && <TrendRadarView propertyId={siteId} />}
         {activeTab === 'lab' && <AIContentLab propertyId={siteId} />}
         {activeTab === 'coach' && <AICoachView propertyId={siteId} employeeId={selectedEmployee} />}

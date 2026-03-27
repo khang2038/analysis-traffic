@@ -5,7 +5,7 @@ import fs from 'fs';
 import session from 'express-session';
 import dotenv from 'dotenv';
 import { OAuth2Client } from 'google-auth-library';
-import { fetchEmployeeReport, fetchLeaderboard, fetchEmployeeReportByAlias, fetchLeaderboardByAlias, fetchRealtimeReport, parseSitesEnv, SiteProperty, fetchTrendRadarData } from './ga';
+import { fetchEmployeeReport, fetchLeaderboard, fetchEmployeeReportByAlias, fetchLeaderboardByAlias, parseSitesEnv, SiteProperty, fetchTrendRadarData } from './ga';
 import { loadAliasMapFromEnv, loadDefaultAliasMapFromEnv, loadGroupsFromEnv } from './alias';
 import { DataCollectorService } from './services/dataCollector';
 import { TrendDetectionService } from './services/trendDetection';
@@ -110,38 +110,7 @@ app.get('/api/report', async (req, res) => {
   }
 });
 
-const realtimeCache: Record<string, { timestamp: number; data: any }> = {};
-const REALTIME_CACHE_TTL = 60 * 1000; // 60 seconds
 
-app.get('/api/realtime', async (req, res) => {
-  try {
-    const propertyId = String(req.query.propertyId || '');
-    if (!propertyId) return res.status(400).json({ error: 'Missing propertyId' });
-
-    const now = Date.now();
-    const cached = realtimeCache[propertyId];
-    if (cached && (now - cached.timestamp < REALTIME_CACHE_TTL)) {
-      return res.json(cached.data);
-    }
-
-    const client = buildAnalyticsClientFromSession(req.session as any);
-    const report = await fetchRealtimeReport(propertyId, client);
-
-    realtimeCache[propertyId] = {
-      timestamp: Date.now(),
-      data: report
-    };
-
-    res.json(report);
-  } catch (err: any) {
-    // eslint-disable-next-line no-console
-    console.error('REALTIME_ERROR', err);
-    res.status(500).json({
-      error: err?.message || 'Unknown error',
-      details: err?.response?.data || err?.errors || undefined
-    });
-  }
-});
 
 app.get('/api/leaderboard/all', async (req, res) => {
   try {
