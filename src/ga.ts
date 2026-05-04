@@ -404,7 +404,7 @@ export async function fetchLeaderboard(params: {
 }
 
 // Property IDs dùng pageTitle + screenClass để extract nhân viên/alias (giống TodayOnUs)
-const PROPERTY_IDS_USE_TITLE_AND_SCREEN = new Set(['495153878', '507326230']); // TodayOnUs, newsandfriends
+const PROPERTY_IDS_USE_TITLE_AND_SCREEN = new Set(['495153878', '507326230', '527580966']); // TodayOnUs, newsandfriends, newsfriendsnews
 
 function useTitleAndScreenForProperty(normalizedPropertyId: string): boolean {
   return PROPERTY_IDS_USE_TITLE_AND_SCREEN.has(normalizedPropertyId);
